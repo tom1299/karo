@@ -1,0 +1,9 @@
+apiVersion: karo.karo.jeeatwork.com/v1alpha1
+kind: RestartRule
+metadata:
+  labels:
+    app.kubernetes.io/name: karo
+    app.kubernetes.io/managed-by: kustomize
+  name: restartrule-sample
+spec:
+  # TODO(user): Add fields here

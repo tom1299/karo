@@ -18,9 +18,12 @@ package controller
 
 import (
 	"context"
+	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -61,14 +64,48 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, nil
 	}
 
-	// Log the ConfigMap in debug level
-	log.V(1).Info("Reconciling ConfigMap",
-		"name", configMap.Name,
-		"namespace", configMap.Namespace,
-		"data", configMap.Data,
-		"binaryData", configMap.BinaryData != nil,
-		"annotations", configMap.Annotations,
-		"labels", configMap.Labels)
+	log.V(1).Info("Reconciling ConfigMap", "name", configMap.Name, "namespace", configMap.Namespace)
+
+	ruleKey := configMap.Namespace + "/" + configMap.Name
+
+	restartRule, exists := r.RestartRules[ruleKey]
+	if !exists {
+		log.V(1).Info("No RestartRule found for ConfigMap", "key", ruleKey)
+		return ctrl.Result{}, nil
+	}
+
+	var kind, depName string
+	fmtParts := []rune(restartRule.Then.Restart)
+	for i, c := range fmtParts {
+		if c == '/' {
+			kind = string(fmtParts[:i])
+			depName = string(fmtParts[i+1:])
+			break
+		}
+	}
+	if kind == "Deployment" && depName != "" {
+		dep := &appsv1.Deployment{}
+		depKey := client.ObjectKey{Namespace: configMap.Namespace, Name: depName}
+		if err := r.Get(ctx, depKey, dep); err != nil {
+			log.Error(err, "Unable to fetch Deployment for rollout", "deployment", depName)
+		}
+		patch := []byte(`{
+			"spec": {
+				"template": {
+					"metadata": {
+						"annotations": {
+							"karo.jeeatwork.com/restartedAt": "` + time.Now().Format(time.RFC3339) + `"
+						}
+					}
+				}
+			}
+		}`)
+		if err := r.Patch(ctx, dep, client.RawPatch(types.StrategicMergePatchType, patch)); err != nil {
+			log.Error(err, "Failed to patch Deployment for rollout", "deployment", depName)
+		} else {
+			log.Info("Patched deployment for rollout due to ConfigMap change", "deployment", depName, "configmap", configMap.Name)
+		}
+	}
 
 	return ctrl.Result{}, nil
 }

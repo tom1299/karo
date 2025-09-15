@@ -50,6 +50,8 @@ type RestartRuleReconciler struct {
 func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 
+	log.V(1).Info("Reconciling RestartRule", "name", req.Name, "namespace", req.Namespace)
+
 	// Fetch the RestartRule instance
 	restartRule := &karov1alpha1.RestartRule{}
 	err := r.Get(ctx, req.NamespacedName, restartRule)
@@ -80,8 +82,16 @@ func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
-	// Create a key for the rule using its namespace and name
-	ruleKey := restartRule.Namespace + "/" + restartRule.Name
+	// Iterate over the conditions of the rule and look for a "namespace" condition
+	namespace := req.Namespace
+	for _, condition := range restartRule.Spec.Conditions {
+		namespace = condition.Namespace
+		break
+	}
+
+	// Create a key for the configmap using its namespace and name
+	ruleKey := namespace + "/" + configMapName
+	log.Info("Creating key for RestartRule", "key", ruleKey)
 
 	if _, exists := r.RestartRules[ruleKey]; exists {
 		log.Info("RestartRule already exists in context")

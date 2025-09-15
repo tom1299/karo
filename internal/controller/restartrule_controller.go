@@ -30,12 +30,13 @@ import (
 // RestartRuleReconciler reconciles a RestartRule object
 type RestartRuleReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme       *runtime.Scheme
+	RestartRules map[string]karov1alpha1.RestartRuleSpec
 }
 
-// +kubebuilder:rbac:groups=karo.karo.jeeatwork.com,resources=restartrules,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=karo.karo.jeeatwork.com,resources=restartrules/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=karo.karo.jeeatwork.com,resources=restartrules/finalizers,verbs=update
+// +kubebuilder:rbac:groups=karo.jeeatwork.com,resources=restartrules,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=karo.jeeatwork.com,resources=restartrules/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=karo.jeeatwork.com,resources=restartrules/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -47,9 +48,52 @@ type RestartRuleReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	_ = logf.FromContext(ctx)
+	log := logf.FromContext(ctx)
 
-	// TODO(user): your logic here
+	// Fetch the RestartRule instance
+	restartRule := &karov1alpha1.RestartRule{}
+	err := r.Get(ctx, req.NamespacedName, restartRule)
+	if err != nil {
+		if client.IgnoreNotFound(err) != nil {
+			log.Error(err, "Unable to fetch RestartRule")
+			return ctrl.Result{}, err
+		}
+
+		// RestartRule was deleted
+		// Create a key for the rule using its namespace and name
+		ruleKey := req.Namespace + "/" + req.Name
+
+		// Check if it exists in our in-memory map
+		if _, exists := r.RestartRules[ruleKey]; exists {
+			log.Info("Deleting RestartRule from context", "key", ruleKey)
+			// Delete the rule from our map
+			delete(r.RestartRules, ruleKey)
+		}
+
+		return ctrl.Result{}, nil
+	}
+
+	// RestartRule exists, extract the ConfigMap name it refers to
+	configMapName := restartRule.Spec.When.ConfigMapChange
+	if configMapName == "" {
+		log.Info("RestartRule does not reference a ConfigMap, ignoring", "name", restartRule.Name)
+		return ctrl.Result{}, nil
+	}
+
+	// Create a key for the rule using its namespace and name
+	ruleKey := restartRule.Namespace + "/" + restartRule.Name
+
+	if _, exists := r.RestartRules[ruleKey]; exists {
+		log.Info("RestartRule already exists in context")
+		r.RestartRules[ruleKey] = restartRule.Spec
+	} else {
+		// Rule doesn't exist, add it
+		log.Info("Adding new RestartRule to context",
+			"key", ruleKey,
+			"configMap", configMapName,
+			"restart", restartRule.Spec.Then.Restart)
+		r.RestartRules[ruleKey] = restartRule.Spec
+	}
 
 	return ctrl.Result{}, nil
 }

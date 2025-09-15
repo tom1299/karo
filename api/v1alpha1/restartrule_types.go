@@ -25,14 +25,38 @@ import (
 
 // RestartRuleSpec defines the desired state of RestartRule
 type RestartRuleSpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-	// The following markers will use OpenAPI v3 schema to validate the value
-	// More info: https://book.kubebuilder.io/reference/markers/crd-validation.html
+	// When defines the trigger conditions for the restart rule
+	// +required
+	When TriggerSpec `json:"when"`
 
-	// foo is an example field of RestartRule. Edit restartrule_types.go to remove/update
+	// Then defines the actions to take when the trigger conditions are met
+	// +required
+	Then ActionSpec `json:"then"`
+
+	// Conditions defines additional conditions that must be met for the rule to apply
 	// +optional
-	Foo *string `json:"foo,omitempty"`
+	Conditions []ConditionSpec `json:"conditions,omitempty"`
+}
+
+// TriggerSpec defines what triggers a restart
+type TriggerSpec struct {
+	// ConfigMapChange specifies the name of a ConfigMap whose changes should trigger a restart
+	// +optional
+	ConfigMapChange string `json:"configMapChange,omitempty"`
+}
+
+// ActionSpec defines what action to take when triggered
+type ActionSpec struct {
+	// Restart specifies the resource to restart in format 'kind/name'
+	// +required
+	Restart string `json:"restart"`
+}
+
+// ConditionSpec defines additional conditions for the rule to apply
+type ConditionSpec struct {
+	// Namespace restricts the rule to a specific namespace
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // RestartRuleStatus defines the observed state of RestartRule.

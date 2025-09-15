@@ -31,33 +31,7 @@ rules:
   - patch
   - update
 - apiGroups:
-  - apps
-  resources:
-  - deployments
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - apps
-  resources:
-  - deployments/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - apps
-  resources:
-  - deployments/status
-  verbs:
-  - get
-  - patch
-  - update
-- apiGroups:
-  - karo.karo.jeeatwork.com
+  - karo.jeeatwork.com
   resources:
   - restartrules
   verbs:
@@ -69,13 +43,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - karo.karo.jeeatwork.com
+  - karo.jeeatwork.com
   resources:
   - restartrules/finalizers
   verbs:
   - update
 - apiGroups:
-  - karo.karo.jeeatwork.com
+  - karo.jeeatwork.com
   resources:
   - restartrules/status
   verbs:

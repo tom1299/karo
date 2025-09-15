@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.18.0
-  name: restartrules.karo.karo.jeeatwork.com
+  name: restartrules.karo.jeeatwork.com
 spec:
-  group: karo.karo.jeeatwork.com
+  group: karo.jeeatwork.com
   names:
     kind: RestartRule
     listKind: RestartRuleList
@@ -39,10 +39,40 @@ spec:
           spec:
             description: spec defines the desired state of RestartRule
             properties:
-              foo:
-                description: foo is an example field of RestartRule. Edit restartrule_types.go
-                  to remove/update
-                type: string
+              conditions:
+                description: Conditions defines additional conditions that must be
+                  met for the rule to apply
+                items:
+                  description: ConditionSpec defines additional conditions for the
+                    rule to apply
+                  properties:
+                    namespace:
+                      description: Namespace restricts the rule to a specific namespace
+                      type: string
+                  type: object
+                type: array
+              then:
+                description: Then defines the actions to take when the trigger conditions
+                  are met
+                properties:
+                  restart:
+                    description: Restart specifies the resource to restart in format
+                      'kind/name'
+                    type: string
+                required:
+                - restart
+                type: object
+              when:
+                description: When defines the trigger conditions for the restart rule
+                properties:
+                  configMapChange:
+                    description: ConfigMapChange specifies the name of a ConfigMap
+                      whose changes should trigger a restart
+                    type: string
+                type: object
+            required:
+            - then
+            - when
             type: object
           status:
             description: status defines the observed state of RestartRule

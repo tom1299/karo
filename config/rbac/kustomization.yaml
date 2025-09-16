@@ -22,6 +22,15 @@ resources:
 # default, aiding admins in cluster management. Those roles are
 # not used by the karo itself. You can comment the following lines
 # if you do not want those helpers be installed with your Project.
+- secretrestartrule_admin_role.yaml
+- secretrestartrule_editor_role.yaml
+- secretrestartrule_viewer_role.yaml
+- configmaprestartrule_admin_role.yaml
+- configmaprestartrule_editor_role.yaml
+- configmaprestartrule_viewer_role.yaml
+- ruletarget_admin_role.yaml
+- ruletarget_editor_role.yaml
+- ruletarget_viewer_role.yaml
 - restartrule_admin_role.yaml
 - restartrule_editor_role.yaml
 - restartrule_viewer_role.yaml

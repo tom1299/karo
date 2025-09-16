@@ -37,13 +37,14 @@ import (
 
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
 	"karo.jeeatwork.com/internal/controller"
+	"karo.jeeatwork.com/internal/store"
 	// +kubebuilder:scaffold:imports
 )
 
 var (
-	scheme       = runtime.NewScheme()
-	setupLog     = ctrl.Log.WithName("setup")
-	restartRules = map[string]karov1alpha1.RestartRuleSpec{}
+	scheme           = runtime.NewScheme()
+	setupLog         = ctrl.Log.WithName("setup")
+	restartRuleStore store.RestartRuleStore
 )
 
 func init() {
@@ -155,6 +156,9 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
+	// Initialize the restart rule store
+	restartRuleStore = nil
+
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
@@ -180,17 +184,17 @@ func main() {
 	}
 
 	if err := (&controller.RestartRuleReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		RestartRules: restartRules,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		RestartRuleStore: nil,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RestartRule")
 		os.Exit(1)
 	}
 	if err := (&controller.ConfigMapReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		RestartRules: restartRules,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		RestartRuleStore: nil,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ConfigMap")
 		os.Exit(1)

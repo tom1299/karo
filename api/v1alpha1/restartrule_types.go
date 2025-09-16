@@ -25,36 +25,56 @@ import (
 
 // RestartRuleSpec defines the desired state of RestartRule
 type RestartRuleSpec struct {
-	// When defines the trigger conditions for the restart rule
+	// Changes defines the resources whose changes trigger restarts
 	// +required
-	When TriggerSpec `json:"when"`
+	// +kubebuilder:validation:MinItems=1
+	Changes []ChangeSpec `json:"changes"`
 
-	// Then defines the actions to take when the trigger conditions are met
+	// Targets defines the resources to restart when changes are detected
 	// +required
-	Then ActionSpec `json:"then"`
+	// +kubebuilder:validation:MinItems=1
+	Targets []TargetSpec `json:"targets"`
+}
 
-	// Conditions defines additional conditions that must be met for the rule to apply
+// ChangeSpec defines a resource whose changes trigger restarts
+type ChangeSpec struct {
+	// Kind specifies the kind of resource to watch for changes
+	// +kubebuilder:validation:Enum=ConfigMap;Secret
+	// +required
+	Kind string `json:"kind"`
+
+	// Name specifies the name of the resource to watch
 	// +optional
-	Conditions []ConditionSpec `json:"conditions,omitempty"`
-}
+	Name string `json:"name,omitempty"`
 
-// TriggerSpec defines what triggers a restart
-type TriggerSpec struct {
-	// ConfigMapChange specifies the name of a ConfigMap whose changes should trigger a restart
+	// Selector allows watching resources by label selector
 	// +optional
-	ConfigMapChange string `json:"configMapChange,omitempty"`
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+
+	// ChangeType specifies which types of changes should trigger restarts
+	// If not specified, all change types will trigger restarts
+	// +kubebuilder:validation:Enum=Create;Update;Delete
+	// +optional
+	ChangeType []string `json:"changeType,omitempty"`
 }
 
-// ActionSpec defines what action to take when triggered
-type ActionSpec struct {
-	// Restart specifies the resource to restart in format 'kind/name'
+// TargetSpec defines a resource to restart when changes are detected
+type TargetSpec struct {
+	// Kind specifies the kind of resource to restart
+	// +kubebuilder:validation:Enum=Deployment;StatefulSet
 	// +required
-	Restart string `json:"restart"`
-}
+	Kind string `json:"kind"`
 
-// ConditionSpec defines additional conditions for the rule to apply
-type ConditionSpec struct {
-	// Namespace restricts the rule to a specific namespace
+	// Name specifies the name of the resource to restart
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// Selector allows targeting resources by label selector
+	// +optional
+	Selector *metav1.LabelSelector `json:"selector,omitempty"`
+
+	// Namespace specifies the namespace of the target resources
+	// If not specified, the controller will use the namespace of the RestartRule resource
 	// +optional
 	Namespace string `json:"namespace,omitempty"`
 }

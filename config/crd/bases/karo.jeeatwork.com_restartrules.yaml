@@ -39,40 +39,159 @@ spec:
           spec:
             description: spec defines the desired state of RestartRule
             properties:
-              conditions:
-                description: Conditions defines additional conditions that must be
-                  met for the rule to apply
+              changes:
+                description: Changes defines the resources whose changes trigger restarts
                 items:
-                  description: ConditionSpec defines additional conditions for the
-                    rule to apply
+                  description: ChangeSpec defines a resource whose changes trigger
+                    restarts
                   properties:
-                    namespace:
-                      description: Namespace restricts the rule to a specific namespace
+                    changeType:
+                      description: |-
+                        ChangeType specifies which types of changes should trigger restarts
+                        If not specified, all change types will trigger restarts
+                      enum:
+                      - Create
+                      - Update
+                      - Delete
+                      items:
+                        type: string
+                      type: array
+                    kind:
+                      description: Kind specifies the kind of resource to watch for
+                        changes
+                      enum:
+                      - ConfigMap
+                      - Secret
                       type: string
+                    name:
+                      description: Name specifies the name of the resource to watch
+                      type: string
+                    selector:
+                      description: Selector allows watching resources by label selector
+                      properties:
+                        matchExpressions:
+                          description: matchExpressions is a list of label selector
+                            requirements. The requirements are ANDed.
+                          items:
+                            description: |-
+                              A label selector requirement is a selector that contains values, a key, and an operator that
+                              relates the key and values.
+                            properties:
+                              key:
+                                description: key is the label key that the selector
+                                  applies to.
+                                type: string
+                              operator:
+                                description: |-
+                                  operator represents a key's relationship to a set of values.
+                                  Valid operators are In, NotIn, Exists and DoesNotExist.
+                                type: string
+                              values:
+                                description: |-
+                                  values is an array of string values. If the operator is In or NotIn,
+                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                  the values array must be empty. This array is replaced during a strategic
+                                  merge patch.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - key
+                            - operator
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                            map is equivalent to an element of matchExpressions, whose key field is "key", the
+                            operator is "In", and the values array contains only "value". The requirements are ANDed.
+                          type: object
+                      type: object
+                      x-kubernetes-map-type: atomic
+                  required:
+                  - kind
                   type: object
+                minItems: 1
                 type: array
-              then:
-                description: Then defines the actions to take when the trigger conditions
-                  are met
-                properties:
-                  restart:
-                    description: Restart specifies the resource to restart in format
-                      'kind/name'
-                    type: string
-                required:
-                - restart
-                type: object
-              when:
-                description: When defines the trigger conditions for the restart rule
-                properties:
-                  configMapChange:
-                    description: ConfigMapChange specifies the name of a ConfigMap
-                      whose changes should trigger a restart
-                    type: string
-                type: object
+              targets:
+                description: Targets defines the resources to restart when changes
+                  are detected
+                items:
+                  description: TargetSpec defines a resource to restart when changes
+                    are detected
+                  properties:
+                    kind:
+                      description: Kind specifies the kind of resource to restart
+                      enum:
+                      - Deployment
+                      - StatefulSet
+                      type: string
+                    name:
+                      description: Name specifies the name of the resource to restart
+                      type: string
+                    namespace:
+                      description: |-
+                        Namespace specifies the namespace of the target resources
+                        If not specified, the controller will use the namespace of the RestartRule resource
+                      type: string
+                    selector:
+                      description: Selector allows targeting resources by label selector
+                      properties:
+                        matchExpressions:
+                          description: matchExpressions is a list of label selector
+                            requirements. The requirements are ANDed.
+                          items:
+                            description: |-
+                              A label selector requirement is a selector that contains values, a key, and an operator that
+                              relates the key and values.
+                            properties:
+                              key:
+                                description: key is the label key that the selector
+                                  applies to.
+                                type: string
+                              operator:
+                                description: |-
+                                  operator represents a key's relationship to a set of values.
+                                  Valid operators are In, NotIn, Exists and DoesNotExist.
+                                type: string
+                              values:
+                                description: |-
+                                  values is an array of string values. If the operator is In or NotIn,
+                                  the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                  the values array must be empty. This array is replaced during a strategic
+                                  merge patch.
+                                items:
+                                  type: string
+                                type: array
+                                x-kubernetes-list-type: atomic
+                            required:
+                            - key
+                            - operator
+                            type: object
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          description: |-
+                            matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                            map is equivalent to an element of matchExpressions, whose key field is "key", the
+                            operator is "In", and the values array contains only "value". The requirements are ANDed.
+                          type: object
+                      type: object
+                      x-kubernetes-map-type: atomic
+                  required:
+                  - kind
+                  type: object
+                minItems: 1
+                type: array
             required:
-            - then
-            - when
+            - changes
+            - targets
             type: object
           status:
             description: status defines the observed state of RestartRule

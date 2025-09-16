@@ -1,0 +1,29 @@
+# This rule is not used by the project karo itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants read-only access to karo.karo.jeeatwork.com resources.
+# This role is intended for users who need visibility into these resources
+# without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: karo
+    app.kubernetes.io/managed-by: kustomize
+  name: ruletarget-viewer-role
+rules:
+- apiGroups:
+  - karo.karo.jeeatwork.com
+  resources:
+  - ruletargets
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - karo.karo.jeeatwork.com
+  resources:
+  - ruletargets/status
+  verbs:
+  - get

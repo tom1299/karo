@@ -3,6 +3,9 @@
 # It should be run by config/default
 resources:
 - bases/karo.jeeatwork.com_restartrules.yaml
+- bases/karo.karo.jeeatwork.com_ruletargets.yaml
+- bases/karo.karo.jeeatwork.com_configmaprestartrules.yaml
+- bases/karo.karo.jeeatwork.com_secretrestartrules.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

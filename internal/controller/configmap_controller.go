@@ -24,18 +24,16 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	log "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-// ConfigMapReconciler reconciles a ConfigMap object
 type ConfigMapReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
 	RestartRuleStore *store.RestartRuleStore
 	operationType    OperationType
 }
-
-// +kubebuilder:rbac:groups=core,resources=configmaps/status,verbs=get;update;patch
 
 type OperationType string
 
@@ -45,73 +43,29 @@ const (
 	OperationDelete OperationType = "Delete"
 )
 
-// +kubebuilder:rbac:groups=core,resources=configmaps/finalizers,verbs=update
-
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the ConfigMap object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.21.0/pkg/reconcile
 func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	// log := logf.FromContext(ctx)
-	//
-	//// Fetch the ConfigMap instance
-	//configMap := &corev1.ConfigMap{}
-	//if err := r.Get(ctx, req.NamespacedName, configMap); err != nil {
-	//	if client.IgnoreNotFound(err) != nil {
-	//		log.Error(err, "Unable to fetch ConfigMap")
-	//		return ctrl.Result{}, err
-	//	}
-	//	// ConfigMap not found, likely deleted, return without error
-	//	return ctrl.Result{}, nil
-	//}
-	//
-	//log.V(1).Info("Reconciling ConfigMap", "name", configMap.Name, "namespace", configMap.Namespace)
 
-	// ruleKey := configMap.Namespace + "/" + configMap.Name
+	logger := log.FromContext(ctx)
 
-	//restartRule, exists := r.RestartRules[ruleKey]
-	//if !exists {
-	//	log.V(1).Info("No RestartRule found for ConfigMap", "key", ruleKey)
-	//	return ctrl.Result{}, nil
-	//}
+	var configMap corev1.ConfigMap
+	if err := r.Get(ctx, req.NamespacedName, &configMap); err != nil {
+		// If the ConfigMap doesn't exist and we're handling a delete operation, log it
+		if r.operationType == OperationDelete {
+			logger.Info("ConfigMap event received",
+				"operation", r.operationType,
+				"name", req.Name,
+				"namespace", req.Namespace)
+		} else {
+			// Otherwise, it's an error we should log
+			logger.Error(err, "Unable to fetch ConfigMap")
+		}
+		return ctrl.Result{}, client.IgnoreNotFound(err)
+	}
 
-	//var kind, depName string
-	//fmtParts := []rune(restartRule.Then.Restart)
-	//for i, c := range fmtParts {
-	//	if c == '/' {
-	//		kind = string(fmtParts[:i])
-	//		depName = string(fmtParts[i+1:])
-	//		break
-	//	}
-	//}
-	//if kind == "Deployment" && depName != "" {
-	//	dep := &appsv1.Deployment{}
-	//	depKey := client.ObjectKey{Namespace: configMap.Namespace, Name: depName}
-	//	if err := r.Get(ctx, depKey, dep); err != nil {
-	//		log.Error(err, "Unable to fetch Deployment for rollout", "deployment", depName)
-	//	}
-	//	patch := []byte(`{
-	//		"spec": {
-	//			"template": {
-	//				"metadata": {
-	//					"annotations": {
-	//						"karo.jeeatwork.com/restartedAt": "` + time.Now().Format(time.RFC3339) + `"
-	//					}
-	//				}
-	//			}
-	//		}
-	//	}`)
-	//	if err := r.Patch(ctx, dep, client.RawPatch(types.StrategicMergePatchType, patch)); err != nil {
-	//		log.Error(err, "Failed to patch Deployment for rollout", "deployment", depName)
-	//	} else {
-	//		log.Info("Patched deployment for rollout due to ConfigMap change", "deployment", depName, "configmap", configMap.Name)
-	//	}
-	//}
+	logger.Info("ConfigMap event received",
+		"operation", r.operationType,
+		"name", configMap.Name,
+		"namespace", configMap.Namespace)
 
 	return ctrl.Result{}, nil
 }

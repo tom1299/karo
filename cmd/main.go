@@ -16,6 +16,7 @@ limitations under the License.
 
 package main
 
+// TODO: Remove all kubebuilder comments if not needed
 import (
 	"crypto/tls"
 	"flag"
@@ -23,6 +24,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	// TODO: Really needed ?
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
 	"k8s.io/apimachinery/pkg/runtime"
@@ -56,6 +58,7 @@ func init() {
 
 // nolint:gocyclo
 func main() {
+	// TODO: Review the flags and initializations here if really needed
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string

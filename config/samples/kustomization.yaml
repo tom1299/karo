@@ -1,7 +1,0 @@
-## Append samples of your project ##
-resources:
-- karo_v1alpha1_restartrule.yaml
-- karo_v1alpha1_ruletarget.yaml
-- karo_v1alpha1_configmaprestartrule.yaml
-- karo_v1alpha1_secretrestartrule.yaml
-# +kubebuilder:scaffold:manifestskustomizesamples

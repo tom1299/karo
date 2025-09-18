@@ -35,15 +35,6 @@ type RestartRuleReconciler struct {
 	RestartRuleStore store.RestartRuleStore
 }
 
-// RuleTarget represents a target to be restarted when a change is detected
-type RuleTarget struct {
-	Kind      string
-	Name      string
-	Namespace string
-	Selector  *metav1.LabelSelector
-	Rule      *karov1alpha1.RestartRule
-}
-
 func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	log.V(1).Info("Reconciling RestartRule", "name", req.Name, "namespace", req.Namespace)

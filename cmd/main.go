@@ -46,7 +46,7 @@ import (
 var (
 	scheme           = runtime.NewScheme()
 	setupLog         = ctrl.Log.WithName("setup")
-	restartRuleStore store.RestartRuleStore
+	restartRuleStore = store.NewMemoryRestartRuleStore()
 )
 
 func init() {
@@ -159,9 +159,6 @@ func main() {
 		metricsServerOptions.KeyName = metricsCertKey
 	}
 
-	// Initialize the restart rule store
-	restartRuleStore = nil
-
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
@@ -189,7 +186,7 @@ func main() {
 	if err := (&controller.RestartRuleReconciler{
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
-		RestartRuleStore: nil,
+		RestartRuleStore: restartRuleStore,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "RestartRule")
 		os.Exit(1)
@@ -197,7 +194,7 @@ func main() {
 	if err := (&controller.ConfigMapReconciler{
 		Client:           mgr.GetClient(),
 		Scheme:           mgr.GetScheme(),
-		RestartRuleStore: nil,
+		RestartRuleStore: restartRuleStore,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ConfigMap")
 		os.Exit(1)

@@ -31,7 +31,7 @@ import (
 type ConfigMapReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
-	RestartRuleStore *store.RestartRuleStore
+	RestartRuleStore store.RestartRuleStore
 	operationType    OperationType
 }
 

@@ -17,21 +17,18 @@ limitations under the License.
 package store
 
 import (
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"context"
+	v1 "k8s.io/api/core/v1"
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
 )
 
 // RestartRuleStore defines methods for managing RestartRules.
 type RestartRuleStore interface {
-	// Add inserts or updates a RestartRule.
-	Add(rule *karov1alpha1.RestartRule)
+	Add(ctx context.Context, rule *karov1alpha1.RestartRule)
 
-	// Remove deletes a RestartRule by namespace and name.
-	Remove(namespace, name string)
+	Remove(ctx context.Context, namespace, name string)
 
-	// GetByName retrieves RestartRules by namespace and resource name.
-	GetByName(kind, namespace, name string) []*karov1alpha1.RestartRule
+	GetForSecret(ctx context.Context, secret v1.Secret) []*karov1alpha1.RestartRule
 
-	// GetBySelector retrieves RestartRules by namespace and label selector.
-	GetBySelector(kind, namespace string, selector *metav1.LabelSelector) []*karov1alpha1.RestartRule
+	GetForConfigMap(ctx context.Context, configMap v1.ConfigMap) []*karov1alpha1.RestartRule
 }

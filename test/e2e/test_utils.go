@@ -35,6 +35,7 @@ import (
 
 const (
 	configMapName   = "nginx-config"
+	secretName      = "nginx-secret"
 	deploymentName  = "nginx"
 	interval        = 10 * time.Second
 	restartRuleName = "nginx-restart-rule"
@@ -91,6 +92,22 @@ http {
 	}
 }
 
+func createNginxSecret() *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: testNamespace,
+			Labels: map[string]string{
+				"app": "nginx",
+			},
+		},
+		Data: map[string][]byte{
+			"api-key": []byte("initial-secret-key-123"),
+			"config":  []byte("debug=false\nlog_level=info"),
+		},
+	}
+}
+
 func createNginxDeployment() *appsv1.Deployment {
 	replicas := int32(1)
 
@@ -126,11 +143,29 @@ func createNginxDeployment() *appsv1.Deployment {
 									Protocol:      corev1.ProtocolTCP,
 								},
 							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "API_KEY",
+									ValueFrom: &corev1.EnvVarSource{
+										SecretKeyRef: &corev1.SecretKeySelector{
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: secretName,
+											},
+											Key: "api-key",
+										},
+									},
+								},
+							},
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									Name:      "nginx-config",
 									MountPath: "/etc/nginx/nginx.conf",
 									SubPath:   "nginx.conf",
+								},
+								{
+									Name:      "nginx-secret-config",
+									MountPath: "/etc/secret",
+									ReadOnly:  true,
 								},
 							},
 						},
@@ -143,6 +178,14 @@ func createNginxDeployment() *appsv1.Deployment {
 									LocalObjectReference: corev1.LocalObjectReference{
 										Name: configMapName,
 									},
+								},
+							},
+						},
+						{
+							Name: "nginx-secret-config",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{
+									SecretName: secretName,
 								},
 							},
 						},
@@ -177,6 +220,30 @@ func createRestartRule() *karov1alpha1.RestartRule {
 	}
 }
 
+func createSecretRestartRule() *karov1alpha1.RestartRule {
+	return &karov1alpha1.RestartRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nginx-secret-restart-rule",
+			Namespace: testNamespace,
+		},
+		Spec: karov1alpha1.RestartRuleSpec{
+			Changes: []karov1alpha1.ChangeSpec{
+				{
+					Kind:       "Secret",
+					Name:       secretName,
+					ChangeType: []string{"Update"},
+				},
+			},
+			Targets: []karov1alpha1.TargetSpec{
+				{
+					Kind: "Deployment",
+					Name: deploymentName,
+				},
+			},
+		},
+	}
+}
+
 func waitForDeploymentReady(ctx context.Context, clientset *kubernetes.Clientset, namespace, name string) error {
 	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
 		deployment, err := clientset.AppsV1().Deployments(namespace).Get(ctx, name, metav1.GetOptions{})
@@ -198,7 +265,7 @@ func waitForDeploymentReady(ctx context.Context, clientset *kubernetes.Clientset
 func cleanup(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset, k8sClient client.Client) {
 	t.Log("Cleaning up test resources...")
 
-	// Delete RestartRule
+	// Delete RestartRules
 	restartRule := &karov1alpha1.RestartRule{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      restartRuleName,
@@ -207,6 +274,16 @@ func cleanup(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset,
 	}
 	if err := k8sClient.Delete(ctx, restartRule); err != nil && !errors.IsNotFound(err) {
 		t.Logf("Failed to delete RestartRule: %v", err)
+	}
+
+	secretRestartRule := &karov1alpha1.RestartRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nginx-secret-restart-rule",
+			Namespace: testNamespace,
+		},
+	}
+	if err := k8sClient.Delete(ctx, secretRestartRule); err != nil && !errors.IsNotFound(err) {
+		t.Logf("Failed to delete Secret RestartRule: %v", err)
 	}
 
 	// Delete Deployment
@@ -229,6 +306,17 @@ func cleanup(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset,
 	}
 	if err := k8sClient.Delete(ctx, configMap); err != nil && !errors.IsNotFound(err) {
 		t.Logf("Failed to delete ConfigMap: %v", err)
+	}
+
+	// Delete Secret
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: testNamespace,
+		},
+	}
+	if err := k8sClient.Delete(ctx, secret); err != nil && !errors.IsNotFound(err) {
+		t.Logf("Failed to delete Secret: %v", err)
 	}
 
 	// Wait a bit for resources to be deleted

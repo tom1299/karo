@@ -48,7 +48,7 @@ spec:
                     changeType:
                       description: |-
                         ChangeType specifies which types of changes should trigger restarts
-                        If not specified, all change types will trigger restarts
+                        If not specified, only "Update" changes will trigger restarts
                       items:
                         type: string
                       type: array

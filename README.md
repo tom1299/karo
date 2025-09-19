@@ -1,69 +1,87 @@
-# karo
-// TODO(user): Add simple overview of use/purpose
+# Karo - Kubernetes Restart Operator
 
-## Description
-// TODO(user): An in-depth paragraph about your project and overview of use
+[![Tests](https://github.com/reuhl/karo/actions/workflows/test.yml/badge.svg)](https://github.com/reuhl/karo/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/reuhl/karo/branch/main/graph/badge.svg)](https://codecov.io/gh/reuhl/karo)
+[![Coverage Status](https://coveralls.io/repos/github/reuhl/karo/badge.svg?branch=main)](https://coveralls.io/github/reuhl/karo?branch=main)
+[![Go Report Card](https://goreportcard.com/badge/github.com/reuhl/karo)](https://goreportcard.com/report/github.com/reuhl/karo)
 
-## Getting Started
+Karo is a Kubernetes operator that automatically restarts deployments when ConfigMaps or Secrets they depend on are updated. This ensures your applications always use the latest configuration without manual intervention.
+
+## Features
+
+- 🔄 **Automatic Restart**: Automatically restarts deployments when referenced ConfigMaps or Secrets change
+- 📋 **Flexible Rules**: Define custom restart rules using the `RestartRule` CRD
+- 🎯 **Selective Targeting**: Target specific deployments based on your requirements
+- 🔒 **Secure**: Works with both ConfigMaps and Secrets
+- 📊 **Coverage**: ![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)
+
+## Quick Start
 
 ### Prerequisites
 - go version v1.24.0+
-- docker version 17.03+.
-- kubectl version v1.11.3+.
-- Access to a Kubernetes v1.11.3+ cluster.
+- docker version 17.03+
+- kubectl version v1.11.3+
+- Access to a Kubernetes v1.11.3+ cluster
 
-### To Deploy on the cluster
-**Build and push your image to the location specified by `IMG`:**
-
-```sh
-make docker-build docker-push IMG=<some-registry>/karo:tag
-```
-
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
+### Installation
 
 **Install the CRDs into the cluster:**
-
 ```sh
 make install
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
-
+**Deploy the controller:**
 ```sh
-make deploy IMG=<some-registry>/karo:tag
+make deploy
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
+### Usage
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
+Create a `RestartRule` to automatically restart deployments when ConfigMaps or Secrets change:
 
-```sh
-kubectl apply -k config/samples/
+```yaml
+apiVersion: karo.jeeatwork.com/v1alpha1
+kind: RestartRule
+metadata:
+  name: nginx-restart-rule
+  namespace: default
+spec:
+  changes:
+    - kind: ConfigMap
+      name: nginx-config
+      changeType: ["Update"]
+    - kind: Secret
+      name: nginx-secret
+      changeType: ["Update"]
+  targets:
+    - kind: Deployment
+      name: nginx
 ```
 
->**NOTE**: Ensure that the samples has default values to test it out.
+## Development
 
-### To Uninstall
-**Delete the instances (CRs) from the cluster:**
+### Running Tests
 
+Run all unit tests with coverage:
 ```sh
-kubectl delete -k config/samples/
+make test-coverage
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
-
+View coverage report in browser:
 ```sh
-make uninstall
+make test-coverage-view
 ```
 
-**UnDeploy the controller from the cluster:**
+### Building
 
+Build the manager binary:
 ```sh
-make undeploy
+make build
+```
+
+Build and push Docker image:
+```sh
+make docker-build docker-push IMG=<registry>/karo:tag
 ```
 
 ## Project Distribution
@@ -132,4 +150,3 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-

@@ -66,13 +66,11 @@ func (s *MemoryRestartRuleStore) GetForKind(ctx context.Context, meta v1.ObjectM
 			}
 			if change.Name != "" && change.Name == meta.Name {
 				matchedRules = append(matchedRules, rule)
-				break
 			}
 			if change.Selector != nil {
 				selector, err := v1.LabelSelectorAsSelector(change.Selector)
 				if err == nil && selector.Matches(labels.Set(meta.Labels)) {
 					matchedRules = append(matchedRules, rule)
-					break
 				}
 			}
 		}

@@ -22,6 +22,14 @@ import (
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
 )
 
+type OperationType string
+
+const (
+	OperationCreate OperationType = "Create"
+	OperationUpdate OperationType = "Update"
+	OperationDelete OperationType = "Delete"
+)
+
 // RestartRuleStore defines methods for managing RestartRules.
 type RestartRuleStore interface {
 	Add(ctx context.Context, rule *karov1alpha1.RestartRule)

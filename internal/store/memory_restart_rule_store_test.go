@@ -480,7 +480,7 @@ func TestMemoryRestartRuleStore_GetForKind(t *testing.T) {
 					},
 				},
 			},
-			expected: 1,
+			expected: 2,
 		},
 		{
 			name: "invalid label selector should not match",

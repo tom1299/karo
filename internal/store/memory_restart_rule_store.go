@@ -46,15 +46,15 @@ func (s *MemoryRestartRuleStore) Remove(ctx context.Context, namespace, name str
 	s.rules[namespace+"/"+name] = nil
 }
 
-func (s *MemoryRestartRuleStore) GetForSecret(ctx context.Context, secret v2.Secret) []*karov1alpha1.RestartRule {
-	return s.GetForKind(ctx, secret.ObjectMeta, v2.SchemeGroupVersion.WithKind("Secret").Kind)
+func (s *MemoryRestartRuleStore) GetForSecret(ctx context.Context, secret v2.Secret, operation OperationType) []*karov1alpha1.RestartRule {
+	return s.GetForKind(ctx, secret.ObjectMeta, v2.SchemeGroupVersion.WithKind("Secret").Kind, operation)
 }
 
-func (s *MemoryRestartRuleStore) GetForConfigMap(ctx context.Context, configmap v2.ConfigMap) []*karov1alpha1.RestartRule {
-	return s.GetForKind(ctx, configmap.ObjectMeta, v2.SchemeGroupVersion.WithKind("ConfigMap").Kind)
+func (s *MemoryRestartRuleStore) GetForConfigMap(ctx context.Context, configmap v2.ConfigMap, operation OperationType) []*karov1alpha1.RestartRule {
+	return s.GetForKind(ctx, configmap.ObjectMeta, v2.SchemeGroupVersion.WithKind("ConfigMap").Kind, operation)
 }
 
-func (s *MemoryRestartRuleStore) GetForKind(ctx context.Context, meta v1.ObjectMeta, kind string) []*karov1alpha1.RestartRule {
+func (s *MemoryRestartRuleStore) GetForKind(ctx context.Context, meta v1.ObjectMeta, kind string, operation OperationType) []*karov1alpha1.RestartRule {
 	var matchedRules []*karov1alpha1.RestartRule
 	for _, rule := range s.rules {
 		if rule == nil {
@@ -64,16 +64,45 @@ func (s *MemoryRestartRuleStore) GetForKind(ctx context.Context, meta v1.ObjectM
 			if change.Kind != kind {
 				continue
 			}
+
+			// Check if this change spec matches the operation type
+			if !s.matchesOperationType(change, operation) {
+				continue
+			}
+
+			// Check name match
 			if change.Name != "" && change.Name == meta.Name {
 				matchedRules = append(matchedRules, rule)
+				break // Don't add the same rule multiple times
 			}
+
+			// Check selector match
 			if change.Selector != nil {
 				selector, err := v1.LabelSelectorAsSelector(change.Selector)
 				if err == nil && selector.Matches(labels.Set(meta.Labels)) {
 					matchedRules = append(matchedRules, rule)
+					break // Don't add the same rule multiple times
 				}
 			}
 		}
 	}
 	return matchedRules
+}
+
+// matchesOperationType checks if the change spec's ChangeType includes the given operation
+func (s *MemoryRestartRuleStore) matchesOperationType(change karov1alpha1.ChangeSpec, operation OperationType) bool {
+	// If ChangeType is not specified, only "Update" operations match
+	if len(change.ChangeType) == 0 {
+		return operation == OperationUpdate
+	}
+
+	// Check if the operation is in the ChangeType array
+	operationStr := string(operation)
+	for _, changeType := range change.ChangeType {
+		if changeType == operationStr {
+			return true
+		}
+	}
+
+	return false
 }

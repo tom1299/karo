@@ -49,7 +49,7 @@ type ChangeSpec struct {
 	Selector *metav1.LabelSelector `json:"selector,omitempty"`
 
 	// ChangeType specifies which types of changes should trigger restarts
-	// If not specified, all change types will trigger restarts
+	// If not specified, only "Update" changes will trigger restarts
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Items:Enum=Create;Update;Delete
 	// +optional

@@ -58,34 +58,37 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		"name", configMap.Name,
 		"namespace", configMap.Namespace)
 
-	// Get matching restart rules from the store
-	restartRules := r.RestartRuleStore.GetForConfigMap(ctx, configMap)
+	// Check if this is an update event
+	if r.operationType == store.OperationUpdate {
+		// Get matching restart rules from the store
+		restartRules := r.RestartRuleStore.GetForConfigMap(ctx, configMap, store.OperationUpdate)
 
-	// For every restart rule returned by the store
-	for _, rule := range restartRules {
-		logger.Info("Processing restart rule",
-			"restartRule", rule.Name,
-			"namespace", rule.Namespace,
-			"configMap", configMap.Name)
+		// For every restart rule returned by the store
+		for _, rule := range restartRules {
+			logger.Info("Processing restart rule",
+				"restartRule", rule.Name,
+				"namespace", rule.Namespace,
+				"configMap", configMap.Name)
 
-		// Get all targets and iterate over them
-		for _, target := range rule.Spec.Targets {
-			// If the target is a Deployment, do a rollout restart
-			if target.Kind == "Deployment" {
-				if err := r.restartDeployment(ctx, target, rule); err != nil {
-					logger.Error(err, "Failed to restart deployment",
+			// Get all targets and iterate over them
+			for _, target := range rule.Spec.Targets {
+				// If the target is a Deployment, do a rollout restart
+				if target.Kind == "Deployment" {
+					if err := r.restartDeployment(ctx, target, rule); err != nil {
+						logger.Error(err, "Failed to restart deployment",
+							"deployment", target.Name,
+							"configMap", configMap.Name,
+							"restartRule", rule.Name)
+						continue
+					}
+
+					// Log the restart of the deployment
+					logger.Info("Successfully restarted deployment",
 						"deployment", target.Name,
 						"configMap", configMap.Name,
-						"restartRule", rule.Name)
-					continue
+						"restartRule", rule.Name,
+						"namespace", target.Namespace)
 				}
-
-				// Log the restart of the deployment
-				logger.Info("Successfully restarted deployment",
-					"deployment", target.Name,
-					"configMap", configMap.Name,
-					"restartRule", rule.Name,
-					"namespace", target.Namespace)
 			}
 		}
 	}

@@ -36,7 +36,7 @@ type RestartRuleStore interface {
 
 	Remove(ctx context.Context, namespace, name string)
 
-	GetForSecret(ctx context.Context, secret v1.Secret) []*karov1alpha1.RestartRule
+	GetForSecret(ctx context.Context, secret v1.Secret, operation OperationType) []*karov1alpha1.RestartRule
 
-	GetForConfigMap(ctx context.Context, configMap v1.ConfigMap) []*karov1alpha1.RestartRule
+	GetForConfigMap(ctx context.Context, configMap v1.ConfigMap, operation OperationType) []*karov1alpha1.RestartRule
 }

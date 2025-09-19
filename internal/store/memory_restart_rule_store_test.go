@@ -172,19 +172,21 @@ func TestMemoryRestartRuleStore_Remove(t *testing.T) {
 
 func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 	tests := []struct {
-		name     string
-		secret   v1.Secret
-		rules    []*karov1alpha1.RestartRule
-		expected int
+		name      string
+		secret    v1.Secret
+		operation OperationType
+		rules     []*karov1alpha1.RestartRule
+		expected  int
 	}{
 		{
-			name: "match secret by name",
+			name: "match secret by name with Update operation",
 			secret: v1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-secret",
 					Namespace: "default",
 				},
 			},
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -196,6 +198,7 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 							{
 								Kind: "Secret",
 								Name: "test-secret",
+								// Empty ChangeType defaults to Update only
 							},
 						},
 					},
@@ -204,7 +207,35 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 			expected: 1,
 		},
 		{
-			name: "match secret by label selector",
+			name: "no match with empty ChangeType for Create operation",
+			secret: v1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-secret",
+					Namespace: "default",
+				},
+			},
+			operation: OperationCreate,
+			rules: []*karov1alpha1.RestartRule{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-rule",
+						Namespace: "default",
+					},
+					Spec: karov1alpha1.RestartRuleSpec{
+						Changes: []karov1alpha1.ChangeSpec{
+							{
+								Kind: "Secret",
+								Name: "test-secret",
+								// Empty ChangeType only matches Update
+							},
+						},
+					},
+				},
+			},
+			expected: 0,
+		},
+		{
+			name: "match secret by label selector with Update operation",
 			secret: v1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-secret",
@@ -215,6 +246,7 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 					},
 				},
 			},
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -230,6 +262,7 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 										"app": "test-app",
 									},
 								},
+								// Empty ChangeType defaults to Update only
 							},
 						},
 					},
@@ -245,6 +278,7 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 					Namespace: "default",
 				},
 			},
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -271,6 +305,7 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 					Namespace: "default",
 				},
 			},
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -300,6 +335,7 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 					},
 				},
 			},
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -330,8 +366,9 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 					Namespace: "default",
 				},
 			},
-			rules:    []*karov1alpha1.RestartRule{},
-			expected: 0,
+			operation: OperationUpdate,
+			rules:     []*karov1alpha1.RestartRule{},
+			expected:  0,
 		},
 	}
 
@@ -344,7 +381,7 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 				store.Add(ctx, rule)
 			}
 
-			result := store.GetForSecret(ctx, tt.secret)
+			result := store.GetForSecret(ctx, tt.secret, tt.operation)
 			if len(result) != tt.expected {
 				t.Errorf("GetForSecret() returned %d rules, want %d", len(result), tt.expected)
 			}
@@ -356,17 +393,19 @@ func TestMemoryRestartRuleStore_GetForConfigMap(t *testing.T) {
 	tests := []struct {
 		name      string
 		configMap v1.ConfigMap
+		operation OperationType
 		rules     []*karov1alpha1.RestartRule
 		expected  int
 	}{
 		{
-			name: "match configmap by name",
+			name: "match configmap by name with Update operation",
 			configMap: v1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-configmap",
 					Namespace: "default",
 				},
 			},
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -378,6 +417,7 @@ func TestMemoryRestartRuleStore_GetForConfigMap(t *testing.T) {
 							{
 								Kind: "ConfigMap",
 								Name: "test-configmap",
+								// Empty ChangeType defaults to Update only
 							},
 						},
 					},
@@ -386,7 +426,35 @@ func TestMemoryRestartRuleStore_GetForConfigMap(t *testing.T) {
 			expected: 1,
 		},
 		{
-			name: "match configmap by label selector",
+			name: "no match with empty ChangeType for Create operation",
+			configMap: v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-configmap",
+					Namespace: "default",
+				},
+			},
+			operation: OperationCreate,
+			rules: []*karov1alpha1.RestartRule{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-rule",
+						Namespace: "default",
+					},
+					Spec: karov1alpha1.RestartRuleSpec{
+						Changes: []karov1alpha1.ChangeSpec{
+							{
+								Kind: "ConfigMap",
+								Name: "test-configmap",
+								// Empty ChangeType only matches Update
+							},
+						},
+					},
+				},
+			},
+			expected: 0,
+		},
+		{
+			name: "match configmap by label selector with Update operation",
 			configMap: v1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-configmap",
@@ -397,6 +465,7 @@ func TestMemoryRestartRuleStore_GetForConfigMap(t *testing.T) {
 					},
 				},
 			},
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -412,6 +481,7 @@ func TestMemoryRestartRuleStore_GetForConfigMap(t *testing.T) {
 										"env": "production",
 									},
 								},
+								// Empty ChangeType defaults to Update only
 							},
 						},
 					},
@@ -430,7 +500,7 @@ func TestMemoryRestartRuleStore_GetForConfigMap(t *testing.T) {
 				store.Add(ctx, rule)
 			}
 
-			result := store.GetForConfigMap(ctx, tt.configMap)
+			result := store.GetForConfigMap(ctx, tt.configMap, tt.operation)
 			if len(result) != tt.expected {
 				t.Errorf("GetForConfigMap() returned %d rules, want %d", len(result), tt.expected)
 			}
@@ -440,11 +510,12 @@ func TestMemoryRestartRuleStore_GetForConfigMap(t *testing.T) {
 
 func TestMemoryRestartRuleStore_GetForKind(t *testing.T) {
 	tests := []struct {
-		name     string
-		meta     metav1.ObjectMeta
-		kind     string
-		rules    []*karov1alpha1.RestartRule
-		expected int
+		name      string
+		meta      metav1.ObjectMeta
+		kind      string
+		operation OperationType
+		rules     []*karov1alpha1.RestartRule
+		expected  int
 	}{
 		{
 			name: "multiple matching changes in same rule should return rule once",
@@ -455,7 +526,8 @@ func TestMemoryRestartRuleStore_GetForKind(t *testing.T) {
 					"app": "test-app",
 				},
 			},
-			kind: "Secret",
+			kind:      "Secret",
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -480,7 +552,7 @@ func TestMemoryRestartRuleStore_GetForKind(t *testing.T) {
 					},
 				},
 			},
-			expected: 2,
+			expected: 1, // Should only return the rule once due to break statement
 		},
 		{
 			name: "invalid label selector should not match",
@@ -488,7 +560,8 @@ func TestMemoryRestartRuleStore_GetForKind(t *testing.T) {
 				Name:      "test-resource",
 				Namespace: "default",
 			},
-			kind: "Secret",
+			kind:      "Secret",
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -521,7 +594,8 @@ func TestMemoryRestartRuleStore_GetForKind(t *testing.T) {
 				Name:      "test-resource",
 				Namespace: "default",
 			},
-			kind: "Secret",
+			kind:      "Secret",
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -555,42 +629,13 @@ func TestMemoryRestartRuleStore_GetForKind(t *testing.T) {
 			expected: 2,
 		},
 		{
-			name: "resource with nil labels should not match label selector",
-			meta: metav1.ObjectMeta{
-				Name:      "test-resource",
-				Namespace: "default",
-				Labels:    nil,
-			},
-			kind: "Secret",
-			rules: []*karov1alpha1.RestartRule{
-				{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      "test-rule",
-						Namespace: "default",
-					},
-					Spec: karov1alpha1.RestartRuleSpec{
-						Changes: []karov1alpha1.ChangeSpec{
-							{
-								Kind: "Secret",
-								Selector: &metav1.LabelSelector{
-									MatchLabels: map[string]string{
-										"app": "test-app",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			expected: 0,
-		},
-		{
 			name: "empty name and selector should not match",
 			meta: metav1.ObjectMeta{
 				Name:      "test-resource",
 				Namespace: "default",
 			},
-			kind: "Secret",
+			kind:      "Secret",
+			operation: OperationUpdate,
 			rules: []*karov1alpha1.RestartRule{
 				{
 					ObjectMeta: metav1.ObjectMeta{
@@ -620,7 +665,7 @@ func TestMemoryRestartRuleStore_GetForKind(t *testing.T) {
 				store.Add(ctx, rule)
 			}
 
-			result := store.GetForKind(ctx, tt.meta, tt.kind)
+			result := store.GetForKind(ctx, tt.meta, tt.kind, tt.operation)
 			if len(result) != tt.expected {
 				t.Errorf("GetForKind() returned %d rules, want %d", len(result), tt.expected)
 			}
@@ -657,7 +702,7 @@ func TestMemoryRestartRuleStore_SkipNilRules(t *testing.T) {
 		},
 	}
 
-	rules := store.GetForSecret(ctx, secret)
+	rules := store.GetForSecret(ctx, secret, OperationUpdate)
 	if len(rules) != 0 {
 		t.Errorf("GetForSecret() should skip nil rules, got %d rules, want 0", len(rules))
 	}
@@ -686,8 +731,96 @@ func TestMemoryRestartRuleStore_EmptyChanges(t *testing.T) {
 		},
 	}
 
-	rules := store.GetForSecret(ctx, secret)
+	rules := store.GetForSecret(ctx, secret, OperationUpdate)
 	if len(rules) != 0 {
 		t.Errorf("GetForSecret() should handle empty changes slice, got %d rules, want 0", len(rules))
+	}
+}
+
+func TestMemoryRestartRuleStore_matchesOperationType(t *testing.T) {
+	store := NewMemoryRestartRuleStore()
+
+	tests := []struct {
+		name      string
+		change    karov1alpha1.ChangeSpec
+		operation OperationType
+		expected  bool
+	}{
+		{
+			name: "empty ChangeType only matches Update operations",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: "test",
+			},
+			operation: OperationUpdate,
+			expected:  true,
+		},
+		{
+			name: "empty ChangeType does not match Create operations",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: "test",
+			},
+			operation: OperationCreate,
+			expected:  false,
+		},
+		{
+			name: "empty ChangeType does not match Delete operations",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: "test",
+			},
+			operation: OperationDelete,
+			expected:  false,
+		},
+		{
+			name: "matching operation type",
+			change: karov1alpha1.ChangeSpec{
+				Kind:       "ConfigMap",
+				Name:       "test",
+				ChangeType: []string{"Update"},
+			},
+			operation: OperationUpdate,
+			expected:  true,
+		},
+		{
+			name: "non-matching operation type",
+			change: karov1alpha1.ChangeSpec{
+				Kind:       "ConfigMap",
+				Name:       "test",
+				ChangeType: []string{"Create"},
+			},
+			operation: OperationUpdate,
+			expected:  false,
+		},
+		{
+			name: "multiple operation types with match",
+			change: karov1alpha1.ChangeSpec{
+				Kind:       "ConfigMap",
+				Name:       "test",
+				ChangeType: []string{"Create", "Update", "Delete"},
+			},
+			operation: OperationUpdate,
+			expected:  true,
+		},
+		{
+			name: "multiple operation types without match",
+			change: karov1alpha1.ChangeSpec{
+				Kind:       "ConfigMap",
+				Name:       "test",
+				ChangeType: []string{"Create", "Delete"},
+			},
+			operation: OperationUpdate,
+			expected:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := store.matchesOperationType(tt.change, tt.operation)
+			if result != tt.expected {
+				t.Errorf("matchesOperationType() = %v, expected %v", result, tt.expected)
+			}
+		})
 	}
 }

@@ -39,7 +39,7 @@ func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log.V(1).Info("Reconciling RestartRule", "name", req.Name, "namespace", req.Namespace)
 
 	var rule karov1alpha1.RestartRule
-	err := r.Client.Get(ctx, req.NamespacedName, &rule)
+	err := r.Get(ctx, req.NamespacedName, &rule)
 	if err != nil {
 		if client.IgnoreNotFound(err) == nil {
 			// Object deleted, remove from store

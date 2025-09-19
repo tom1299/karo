@@ -265,66 +265,84 @@ func waitForDeploymentReady(ctx context.Context, clientset *kubernetes.Clientset
 func cleanup(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset, k8sClient client.Client) {
 	t.Log("Cleaning up test resources...")
 
-	// Delete RestartRules
-	restartRule := &karov1alpha1.RestartRule{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      restartRuleName,
-			Namespace: testNamespace,
+	cleanupRestartRules(ctx, t, k8sClient)
+	cleanupK8sResources(ctx, t, k8sClient)
+	cleanupNamespace(ctx, t, clientset)
+}
+
+func cleanupRestartRules(ctx context.Context, t *testing.T, k8sClient client.Client) {
+	restartRules := []*karov1alpha1.RestartRule{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      restartRuleName,
+				Namespace: testNamespace,
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "nginx-secret-restart-rule",
+				Namespace: testNamespace,
+			},
 		},
 	}
-	if err := k8sClient.Delete(ctx, restartRule); err != nil && !errors.IsNotFound(err) {
-		t.Logf("Failed to delete RestartRule: %v", err)
-	}
 
-	secretRestartRule := &karov1alpha1.RestartRule{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "nginx-secret-restart-rule",
-			Namespace: testNamespace,
+	for _, rule := range restartRules {
+		deleteResource(ctx, t, k8sClient, rule, "RestartRule")
+	}
+}
+
+func cleanupK8sResources(ctx context.Context, t *testing.T, k8sClient client.Client) {
+	resources := []client.Object{
+		&appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      deploymentName,
+				Namespace: testNamespace,
+			},
+		},
+		&corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      configMapName,
+				Namespace: testNamespace,
+			},
+		},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      secretName,
+				Namespace: testNamespace,
+			},
 		},
 	}
-	if err := k8sClient.Delete(ctx, secretRestartRule); err != nil && !errors.IsNotFound(err) {
-		t.Logf("Failed to delete Secret RestartRule: %v", err)
+
+	for _, resource := range resources {
+		resourceType := getResourceType(resource)
+		deleteResource(ctx, t, k8sClient, resource, resourceType)
 	}
 
-	// Delete Deployment
-	deployment := &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      deploymentName,
-			Namespace: testNamespace,
-		},
-	}
-	if err := k8sClient.Delete(ctx, deployment); err != nil && !errors.IsNotFound(err) {
-		t.Logf("Failed to delete Deployment: %v", err)
-	}
-
-	// Delete ConfigMap
-	configMap := &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      configMapName,
-			Namespace: testNamespace,
-		},
-	}
-	if err := k8sClient.Delete(ctx, configMap); err != nil && !errors.IsNotFound(err) {
-		t.Logf("Failed to delete ConfigMap: %v", err)
-	}
-
-	// Delete Secret
-	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      secretName,
-			Namespace: testNamespace,
-		},
-	}
-	if err := k8sClient.Delete(ctx, secret); err != nil && !errors.IsNotFound(err) {
-		t.Logf("Failed to delete Secret: %v", err)
-	}
-
-	// Wait a bit for resources to be deleted
 	time.Sleep(2 * time.Second)
+}
 
-	// Delete namespace
+func cleanupNamespace(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset) {
 	if err := clientset.CoreV1().Namespaces().Delete(
 		ctx, testNamespace, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
 		t.Logf("Failed to delete namespace: %v", err)
+	}
+}
+
+func deleteResource(ctx context.Context, t *testing.T, k8sClient client.Client, resource client.Object, resourceType string) {
+	if err := k8sClient.Delete(ctx, resource); err != nil && !errors.IsNotFound(err) {
+		t.Logf("Failed to delete %s: %v", resourceType, err)
+	}
+}
+
+func getResourceType(resource client.Object) string {
+	switch resource.(type) {
+	case *appsv1.Deployment:
+		return "Deployment"
+	case *corev1.ConfigMap:
+		return "ConfigMap"
+	case *corev1.Secret:
+		return "Secret"
+	default:
+		return "Resource"
 	}
 }

@@ -28,3 +28,4 @@ go.work
 
 coverage.html
 coverage.txt
+test-e2e.log

@@ -31,7 +31,24 @@ import (
 )
 
 func TestRestartRuleE2E(t *testing.T) {
-	// Setup kubernetes clients
+	ctx := context.Background()
+	clients := setupTestClients(t)
+
+	setupTestEnvironment(ctx, t, clients)
+	defer cleanup(ctx, t, clients.clientset, clients.k8sClient)
+
+	configMapRestartTime := testConfigMapRestart(ctx, t, clients)
+	secretRestartTime := testSecretRestart(ctx, t, clients, configMapRestartTime)
+
+	validateTestResults(t, configMapRestartTime, secretRestartTime)
+}
+
+type testClients struct {
+	clientset *kubernetes.Clientset
+	k8sClient client.Client
+}
+
+func setupTestClients(t *testing.T) *testClients {
 	cfg, err := config.GetConfig()
 	if err != nil {
 		t.Fatalf("Failed to get kubernetes config: %v", err)
@@ -48,70 +65,87 @@ func TestRestartRuleE2E(t *testing.T) {
 		t.Fatalf("Failed to create controller-runtime client: %v", err)
 	}
 
-	ctx := context.Background()
+	return &testClients{
+		clientset: clientset,
+		k8sClient: k8sClient,
+	}
+}
 
-	// Create test namespace
+func setupTestEnvironment(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("Creating test namespace...")
-	if err := createNamespace(ctx, clientset, testNamespace); err != nil {
+	if err := createNamespace(ctx, clients.clientset, testNamespace); err != nil {
 		t.Fatalf("Failed to create namespace: %v", err)
 	}
-	defer cleanup(ctx, t, clientset, k8sClient)
 
-	// Create ConfigMap
 	t.Log("Creating nginx ConfigMap...")
 	configMap := createNginxConfigMap()
-	if err := k8sClient.Create(ctx, configMap); err != nil {
+	if err := clients.k8sClient.Create(ctx, configMap); err != nil {
 		t.Fatalf("Failed to create ConfigMap: %v", err)
 	}
 
-	// Create Secret
 	t.Log("Creating nginx Secret...")
 	secret := createNginxSecret()
-	if err := k8sClient.Create(ctx, secret); err != nil {
+	if err := clients.k8sClient.Create(ctx, secret); err != nil {
 		t.Fatalf("Failed to create Secret: %v", err)
 	}
 
-	// Create nginx Deployment
 	t.Log("Creating nginx Deployment...")
 	deployment := createNginxDeployment()
-	if err := k8sClient.Create(ctx, deployment); err != nil {
+	if err := clients.k8sClient.Create(ctx, deployment); err != nil {
 		t.Fatalf("Failed to create Deployment: %v", err)
 	}
 
-	// Wait for deployment to be ready
 	t.Log("Waiting for nginx Deployment to be ready...")
-	if err := waitForDeploymentReady(ctx, clientset, testNamespace, deploymentName); err != nil {
+	if err := waitForDeploymentReady(ctx, clients.clientset, testNamespace, deploymentName); err != nil {
 		t.Fatalf("Deployment did not become ready: %v", err)
 	}
+}
 
-	// Create RestartRule for ConfigMap
-	t.Log("Creating RestartRule for ConfigMap...")
-	restartRule := createRestartRule()
-	if err := k8sClient.Create(ctx, restartRule); err != nil {
-		t.Fatalf("Failed to create RestartRule: %v", err)
-	}
-
-	// Wait a bit for the controller to process the RestartRule
-	time.Sleep(5 * time.Second)
-
-	// Get initial deployment generation for comparison
-	initialDeployment := &appsv1.Deployment{}
-	if err := k8sClient.Get(
-		ctx, client.ObjectKey{Namespace: testNamespace, Name: deploymentName}, initialDeployment); err != nil {
-		t.Fatalf("Failed to get initial deployment: %v", err)
-	}
-	initialGeneration := initialDeployment.Generation
-	t.Logf("Initial deployment generation: %d", initialGeneration)
-
-	// ======== CONFIGMAP TEST SECTION ========
+func testConfigMapRestart(ctx context.Context, t *testing.T, clients *testClients) string {
 	t.Log("=== Testing ConfigMap restart functionality ===")
 
-	// Update ConfigMap to trigger restart
+	t.Log("Creating RestartRule for ConfigMap...")
+	restartRule := createRestartRule()
+	if err := clients.k8sClient.Create(ctx, restartRule); err != nil {
+		t.Fatalf("Failed to create RestartRule: %v", err)
+	}
+	time.Sleep(5 * time.Second)
+
 	t.Log("Updating ConfigMap to trigger restart...")
+	if err := updateConfigMapContent(ctx, clients.k8sClient); err != nil {
+		t.Fatalf("Failed to update ConfigMap: %v", err)
+	}
+
+	restartTime := waitForDeploymentRestart(ctx, t, clients.k8sClient, "", "ConfigMap")
+	t.Log("SUCCESS: Deployment was successfully rolled after ConfigMap update")
+	return restartTime
+}
+
+func testSecretRestart(ctx context.Context, t *testing.T, clients *testClients, previousRestartTime string) string {
+	t.Log("=== Testing Secret restart functionality ===")
+
+	t.Log("Creating RestartRule for Secret...")
+	secretRestartRule := createSecretRestartRule()
+	if err := clients.k8sClient.Create(ctx, secretRestartRule); err != nil {
+		t.Fatalf("Failed to create Secret RestartRule: %v", err)
+	}
+	time.Sleep(5 * time.Second)
+
+	t.Log("Updating Secret to trigger restart...")
+	if err := updateSecretContent(ctx, clients.k8sClient); err != nil {
+		t.Fatalf("Failed to update Secret: %v", err)
+	}
+
+	restartTime := waitForDeploymentRestart(ctx, t, clients.k8sClient, previousRestartTime, "Secret")
+	t.Log("SUCCESS: Deployment was successfully rolled after Secret update")
+	return restartTime
+}
+
+func updateConfigMapContent(ctx context.Context, k8sClient client.Client) error {
 	updatedConfigMap := &corev1.ConfigMap{}
 	if err := k8sClient.Get(
 		ctx, client.ObjectKey{Namespace: testNamespace, Name: configMapName}, updatedConfigMap); err != nil {
-		t.Fatalf("Failed to get ConfigMap for update: %v", err)
+		return err
 	}
 
 	updatedConfigMap.Data["nginx.conf"] = `
@@ -128,114 +162,62 @@ http {
     }
 }`
 
-	if err := k8sClient.Update(ctx, updatedConfigMap); err != nil {
-		t.Fatalf("Failed to update ConfigMap: %v", err)
-	}
+	return k8sClient.Update(ctx, updatedConfigMap)
+}
 
-	// Check if deployment was rolled (annotation should be present)
-	t.Log("Checking if deployment was rolled after ConfigMap update...")
-	var configMapRestartTime string
-	err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
-		currentDeployment := &appsv1.Deployment{}
-		if err := k8sClient.Get(
-			ctx, client.ObjectKey{Namespace: testNamespace, Name: deploymentName}, currentDeployment); err != nil {
-			return false, err
-		}
-
-		// Check if the restart annotation is present
-		restartAnnotation := "karo.jeeatwork.com/restartedAt"
-		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
-			if restartTime, exists := annotations[restartAnnotation]; exists {
-				t.Logf("Found restart annotation after ConfigMap update: %s = %s", restartAnnotation, restartTime)
-				configMapRestartTime = restartTime
-				return true, nil
-			}
-		}
-
-		t.Logf("Restart annotation not found after ConfigMap update, current annotations: %v",
-			currentDeployment.Spec.Template.Annotations)
-		return false, nil
-	})
-
-	if err != nil {
-		t.Fatalf("Error while waiting for deployment roll after ConfigMap update: %v", err)
-	}
-
-	if configMapRestartTime == "" {
-		t.Fatal("Deployment was not rolled after ConfigMap update")
-	}
-
-	t.Log("SUCCESS: Deployment was successfully rolled after ConfigMap update")
-
-	// ======== SECRET TEST SECTION ========
-	t.Log("=== Testing Secret restart functionality ===")
-
-	// Create RestartRule for Secret
-	t.Log("Creating RestartRule for Secret...")
-	secretRestartRule := createSecretRestartRule()
-	if err := k8sClient.Create(ctx, secretRestartRule); err != nil {
-		t.Fatalf("Failed to create Secret RestartRule: %v", err)
-	}
-
-	// Wait a bit for the controller to process the Secret RestartRule
-	time.Sleep(5 * time.Second)
-
-	// Update Secret to trigger restart
-	t.Log("Updating Secret to trigger restart...")
+func updateSecretContent(ctx context.Context, k8sClient client.Client) error {
 	updatedSecret := &corev1.Secret{}
 	if err := k8sClient.Get(
 		ctx, client.ObjectKey{Namespace: testNamespace, Name: secretName}, updatedSecret); err != nil {
-		t.Fatalf("Failed to get Secret for update: %v", err)
+		return err
 	}
 
 	updatedSecret.Data["api-key"] = []byte("updated-secret-key-456")
 	updatedSecret.Data["config"] = []byte("debug=true\nlog_level=debug")
 
-	if err := k8sClient.Update(ctx, updatedSecret); err != nil {
-		t.Fatalf("Failed to update Secret: %v", err)
-	}
+	return k8sClient.Update(ctx, updatedSecret)
+}
 
-	// Check if deployment was rolled again (annotation should be updated)
-	t.Log("Checking if deployment was rolled after Secret update...")
-	var secretRestartTime string
-	err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+func waitForDeploymentRestart(ctx context.Context, t *testing.T, k8sClient client.Client, previousRestartTime, resourceType string) string {
+	t.Logf("Checking if deployment was rolled after %s update...", resourceType)
+	var restartTime string
+
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
 		currentDeployment := &appsv1.Deployment{}
 		if err := k8sClient.Get(
 			ctx, client.ObjectKey{Namespace: testNamespace, Name: deploymentName}, currentDeployment); err != nil {
 			return false, err
 		}
 
-		// Check if the restart annotation is present and different from ConfigMap restart
 		restartAnnotation := "karo.jeeatwork.com/restartedAt"
 		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
-			if restartTime, exists := annotations[restartAnnotation]; exists {
-				// The restart time should be different from the ConfigMap restart time
-				if restartTime != configMapRestartTime {
-					t.Logf("Found updated restart annotation after Secret update: %s = %s", restartAnnotation, restartTime)
-					secretRestartTime = restartTime
+			if currentRestartTime, exists := annotations[restartAnnotation]; exists {
+				if previousRestartTime == "" || currentRestartTime != previousRestartTime {
+					t.Logf("Found restart annotation after %s update: %s = %s", resourceType, restartAnnotation, currentRestartTime)
+					restartTime = currentRestartTime
 					return true, nil
-				} else {
-					t.Logf("Restart annotation exists but hasn't changed since ConfigMap update: %s", restartTime)
 				}
+				t.Logf("Restart annotation exists but hasn't changed since last update: %s", currentRestartTime)
 			}
 		}
 
-		t.Logf("Restart annotation not found or not updated after Secret update, current annotations: %v",
-			currentDeployment.Spec.Template.Annotations)
+		t.Logf("Restart annotation not found after %s update, current annotations: %v",
+			resourceType, currentDeployment.Spec.Template.Annotations)
 		return false, nil
 	})
 
 	if err != nil {
-		t.Fatalf("Error while waiting for deployment roll after Secret update: %v", err)
+		t.Fatalf("Error while waiting for deployment roll after %s update: %v", resourceType, err)
 	}
 
-	if secretRestartTime == "" {
-		t.Fatal("Deployment was not rolled after Secret update")
+	if restartTime == "" {
+		t.Fatalf("Deployment was not rolled after %s update", resourceType)
 	}
 
-	t.Log("SUCCESS: Deployment was successfully rolled after Secret update")
+	return restartTime
+}
 
-	// ======== FINAL VALIDATION ========
+func validateTestResults(t *testing.T, configMapRestartTime, secretRestartTime string) {
 	t.Logf("=== Test completed successfully ===")
 	t.Logf("ConfigMap restart time: %s", configMapRestartTime)
 	t.Logf("Secret restart time: %s", secretRestartTime)

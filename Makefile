@@ -19,6 +19,25 @@ CONTAINER_TOOL ?= docker
 SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
+# LOCALBIN is the local bin directory for tools downloads
+LOCALBIN ?= $(shell pwd)/bin
+$(LOCALBIN):
+	mkdir -p $(LOCALBIN)
+
+# Tool Binaries
+KUSTOMIZE ?= $(LOCALBIN)/kustomize
+CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
+ENVTEST ?= $(LOCALBIN)/setup-envtest
+GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint
+KUBECTL ?= kubectl
+
+# Tool Versions
+KUSTOMIZE_VERSION ?= v5.0.1
+CONTROLLER_TOOLS_VERSION ?= v0.14.0
+ENVTEST_VERSION ?= latest
+ENVTEST_K8S_VERSION = 1.33.x
+GOLANGCI_LINT_VERSION ?= v1.54.2
+
 .PHONY: all
 all: build
 
@@ -160,40 +179,6 @@ test-coverage: test-unit ## Run all unit tests and generate coverage report
 	@echo "Coverage summary:"
 	@go tool cover -func=cover-unit.out | tail -1
 
-.PHONY: test-coverage-view
-test-coverage-view: test-coverage ## Run all unit tests with coverage and open HTML report
-	@if command -v xdg-open > /dev/null; then \
-		xdg-open coverage.html; \
-	elif command -v open > /dev/null; then \
-		open coverage.html; \
-	else \
-		echo "Please open coverage.html in your browser to view the coverage report"; \
-	fi
-
-##@ Dependencies
-
-## Location to install dependencies to
-LOCALBIN ?= $(shell pwd)/bin
-$(LOCALBIN):
-	mkdir -p $(LOCALBIN)
-
-## Tool Binaries
-KUBECTL ?= kubectl
-KIND ?= kind
-KUSTOMIZE ?= $(LOCALBIN)/kustomize
-CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
-ENVTEST ?= $(LOCALBIN)/setup-envtest
-GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
-
-## Tool Versions
-KUSTOMIZE_VERSION ?= v5.6.0
-CONTROLLER_TOOLS_VERSION ?= v0.18.0
-#ENVTEST_VERSION is the version of controller-runtime release branch to fetch the envtest setup script (i.e. release-0.20)
-ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
-#ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
-ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
-GOLANGCI_LINT_VERSION ?= v2.3.0
-
 .PHONY: kustomize
 kustomize: $(KUSTOMIZE) ## Download kustomize locally if necessary.
 $(KUSTOMIZE): $(LOCALBIN)
@@ -221,6 +206,49 @@ $(ENVTEST): $(LOCALBIN)
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
 	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+
+KIND_CLUSTER ?= karo-test-e2e
+KIND ?= kind
+
+.PHONY: setup-test-e2e
+setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
+	@command -v $(KIND) >/dev/null 2>&1 || { \
+		echo "Kind is not installed. Please install Kind manually."; \
+		exit 1; \
+	}
+	@case "$$($(KIND) get clusters)" in \
+		*"$(KIND_CLUSTER)"*) \
+			echo "Kind cluster '$(KIND_CLUSTER)' already exists. Skipping creation." ;; \
+		*) \
+			echo "Creating Kind cluster '$(KIND_CLUSTER)'..."; \
+			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
+	esac
+
+.PHONY: test-e2e
+test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+	@echo "Setting kubectl context to use kind cluster..."
+	@kubectl config use-context kind-$(KIND_CLUSTER)
+	@echo "Installing CRDs..."
+	@$(MAKE) install
+	@echo "Starting controller in background..."
+	@go run ./cmd/main.go >test-e2e.log 2>&1 &
+	@CONTROLLER_PID=$$!; \
+	echo "Controller PID: $$CONTROLLER_PID"; \
+	echo "Waiting for controller to be ready..."; \
+	sleep 5; \
+	echo "Running e2e tests..."; \
+	go test ./test/e2e/ -v -timeout=10m; \
+	TEST_EXIT_CODE=$$?; \
+	echo "Stopping controller..."; \
+	kill $$CONTROLLER_PID || true; \
+	echo "Cleaning up CRDs..."; \
+	$(MAKE) uninstall || true; \
+	$(MAKE) cleanup-test-e2e; \
+	exit $$TEST_EXIT_CODE
+
+.PHONY: cleanup-test-e2e
+cleanup-test-e2e: ## Tear down the Kind cluster used for e2e tests
+	@$(KIND) delete cluster --name $(KIND_CLUSTER)
 
 # go-install-tool will 'go install' any package with custom target and name of binary, if it doesn't exist
 # $1 - target path with name of binary

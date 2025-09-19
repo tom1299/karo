@@ -4,17 +4,52 @@ run:
 linters:
   default: none
   enable:
+    - contextcheck
     - copyloopvar
+    - cyclop
+    - decorder
+    - dogsled
     - dupl
+    - dupword
+    - embeddedstructfieldcheck
+    - err113
     - errcheck
+    - exhaustive
+    - exptostd
+    - fatcontext
+    - forcetypeassert
+    - funcorder
+    - funlen
     - ginkgolinter
+    - gochecknoglobals
+    - gochecknoinits
+    - gocognit
     - goconst
+    - gocritic
     - gocyclo
+    - goprintffuncname
+    - gosec
     - govet
+    - iface
+    - inamedparam
+    - importas
     - ineffassign
+    - intrange
+    - interfacebloat
+    - ireturn
     - lll
+    - maintidx
+    - makezero
     - misspell
     - nakedret
+    - nestif
+    - nilerr
+    - nilnesserr
+    - nilnil
+    - nlreturn
+    - nolintlint
+    - paralleltest
+    - perfsprint
     - prealloc
     - revive
     - staticcheck

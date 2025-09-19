@@ -61,33 +61,45 @@ func (s *MemoryRestartRuleStore) GetForKind(ctx context.Context, meta v1.ObjectM
 		if rule == nil {
 			continue
 		}
-		for _, change := range rule.Spec.Changes {
-			if change.Kind != kind {
-				continue
-			}
-
-			// Check if this change spec matches the operation type
-			if !s.matchesOperationType(change, operation) {
-				continue
-			}
-
-			// Check name match
-			if change.Name != "" && change.Name == meta.Name {
-				matchedRules = append(matchedRules, rule)
-				break // Don't add the same rule multiple times
-			}
-
-			// Check selector match
-			if change.Selector != nil {
-				selector, err := v1.LabelSelectorAsSelector(change.Selector)
-				if err == nil && selector.Matches(labels.Set(meta.Labels)) {
-					matchedRules = append(matchedRules, rule)
-					break // Don't add the same rule multiple times
-				}
-			}
+		if s.ruleMatchesResource(rule, meta, kind, operation) {
+			matchedRules = append(matchedRules, rule)
 		}
 	}
 	return matchedRules
+}
+
+func (s *MemoryRestartRuleStore) ruleMatchesResource(rule *karov1alpha1.RestartRule, meta v1.ObjectMeta, kind string, operation OperationType) bool {
+	for _, change := range rule.Spec.Changes {
+		if s.changeMatchesResource(change, meta, kind, operation) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *MemoryRestartRuleStore) changeMatchesResource(change karov1alpha1.ChangeSpec, meta v1.ObjectMeta, kind string, operation OperationType) bool {
+	if change.Kind != kind {
+		return false
+	}
+
+	if !s.matchesOperationType(change, operation) {
+		return false
+	}
+
+	return s.matchesNameOrSelector(change, meta)
+}
+
+func (s *MemoryRestartRuleStore) matchesNameOrSelector(change karov1alpha1.ChangeSpec, meta v1.ObjectMeta) bool {
+	if change.Name != "" {
+		return change.Name == meta.Name
+	}
+
+	if change.Selector != nil {
+		selector, err := v1.LabelSelectorAsSelector(change.Selector)
+		return err == nil && selector.Matches(labels.Set(meta.Labels))
+	}
+
+	return false
 }
 
 // matchesOperationType checks if the change spec's ChangeType includes the given operation

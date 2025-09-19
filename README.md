@@ -2,7 +2,6 @@
 
 [![Tests](https://github.com/tom1299/karo/actions/workflows/test.yml/badge.svg)](https://github.com/tom1299/karo/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/tom1299/karo/branch/main/graph/badge.svg)](https://codecov.io/gh/tom1299/karo)
-[![Coverage Status](https://coveralls.io/repos/github/tom1299/karo/badge.svg?branch=main)](https://coveralls.io/github/tom1299/karo?branch=main)
 [![Go Report Card](https://goreportcard.com/badge/github.com/reuhl/karo)](https://goreportcard.com/report/github.com/reuhl/karo)
 
 Karo is a Kubernetes operator that automatically restarts deployments when ConfigMaps or Secrets they depend on are updated. This ensures your applications always use the latest configuration without manual intervention.

@@ -1,8 +1,8 @@
 # Karo - Kubernetes Restart Operator
 
-[![Tests](https://github.com/reuhl/karo/actions/workflows/test.yml/badge.svg)](https://github.com/reuhl/karo/actions/workflows/test.yml)
-[![codecov](https://codecov.io/gh/reuhl/karo/branch/main/graph/badge.svg)](https://codecov.io/gh/reuhl/karo)
-[![Coverage Status](https://coveralls.io/repos/github/reuhl/karo/badge.svg?branch=main)](https://coveralls.io/github/reuhl/karo?branch=main)
+[![Tests](https://github.com/tom1299/karo/actions/workflows/test.yml/badge.svg)](https://github.com/tom1299/karo/actions/workflows/test.yml)
+[![codecov](https://codecov.io/gh/tom1299/karo/branch/main/graph/badge.svg)](https://codecov.io/gh/tom1299/karo)
+[![Coverage Status](https://coveralls.io/repos/github/tom1299/karo/badge.svg?branch=main)](https://coveralls.io/github/tom1299/karo?branch=main)
 [![Go Report Card](https://goreportcard.com/badge/github.com/reuhl/karo)](https://goreportcard.com/report/github.com/reuhl/karo)
 
 Karo is a Kubernetes operator that automatically restarts deployments when ConfigMaps or Secrets they depend on are updated. This ensures your applications always use the latest configuration without manual intervention.
@@ -13,7 +13,6 @@ Karo is a Kubernetes operator that automatically restarts deployments when Confi
 - 📋 **Flexible Rules**: Define custom restart rules using the `RestartRule` CRD
 - 🎯 **Selective Targeting**: Target specific deployments based on your requirements
 - 🔒 **Secure**: Works with both ConfigMaps and Secrets
-- 📊 **Coverage**: ![Coverage](https://img.shields.io/badge/Coverage-100%25-brightgreen)
 
 ## Quick Start
 

@@ -50,7 +50,8 @@ type ChangeSpec struct {
 
 	// ChangeType specifies which types of changes should trigger restarts
 	// If not specified, all change types will trigger restarts
-	// +kubebuilder:validation:Enum=Create;Update;Delete
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:Items:Enum=Create;Update;Delete
 	// +optional
 	ChangeType []string `json:"changeType,omitempty"`
 }

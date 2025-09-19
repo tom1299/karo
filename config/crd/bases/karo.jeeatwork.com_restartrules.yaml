@@ -49,10 +49,6 @@ spec:
                       description: |-
                         ChangeType specifies which types of changes should trigger restarts
                         If not specified, all change types will trigger restarts
-                      enum:
-                      - Create
-                      - Update
-                      - Delete
                       items:
                         type: string
                       type: array

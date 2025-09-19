@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
 	"karo.jeeatwork.com/internal/store"
@@ -38,6 +37,23 @@ type RestartRuleReconciler struct {
 func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
 	log.V(1).Info("Reconciling RestartRule", "name", req.Name, "namespace", req.Namespace)
+
+	var rule karov1alpha1.RestartRule
+	err := r.Client.Get(ctx, req.NamespacedName, &rule)
+	if err != nil {
+		if client.IgnoreNotFound(err) == nil {
+			// Object deleted, remove from store
+			r.RestartRuleStore.Remove(ctx, req.Namespace, req.Name)
+			log.V(1).Info("RestartRule deleted from store", "name", req.Name, "namespace", req.Namespace)
+			return ctrl.Result{}, nil
+		}
+		log.Error(err, "Failed to get RestartRule")
+		return ctrl.Result{}, err
+	}
+
+	// Object exists, add/update in store
+	r.RestartRuleStore.Add(ctx, &rule)
+	log.V(1).Info("RestartRule added/updated in store", "name", req.Name, "namespace", req.Namespace)
 	return ctrl.Result{}, nil
 }
 

@@ -122,7 +122,7 @@ http {
 		t.Fatalf("Failed to update ConfigMap: %v", err)
 	}
 
-	// Check if deployment was rolled (generation should increase)
+	// Check if deployment was rolled (annotation should be present)
 	t.Log("Checking if deployment was rolled...")
 	var deploymentRolled bool
 	err = wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
@@ -132,13 +132,18 @@ http {
 			return false, err
 		}
 
-		t.Logf("Current deployment generation: %d, initial: %d",
-			currentDeployment.Generation, initialGeneration)
-
-		if currentDeployment.Generation > initialGeneration {
-			deploymentRolled = true
-			return true, nil
+		// Check if the restart annotation is present
+		restartAnnotation := "karo.jeeatwork.com/restartedAt"
+		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
+			if restartTime, exists := annotations[restartAnnotation]; exists {
+				t.Logf("Found restart annotation: %s = %s", restartAnnotation, restartTime)
+				deploymentRolled = true
+				return true, nil
+			}
 		}
+
+		t.Logf("Restart annotation not found, current annotations: %v",
+			currentDeployment.Spec.Template.Annotations)
 		return false, nil
 	})
 

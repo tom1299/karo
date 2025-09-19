@@ -28,24 +28,24 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-type ConfigMapReconciler struct {
+type SecretReconciler struct {
 	BaseReconciler
 	Scheme *runtime.Scheme
 }
 
-func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
-	var configMap corev1.ConfigMap
-	if err := r.Get(ctx, req.NamespacedName, &configMap); err != nil {
+	var secret corev1.Secret
+	if err := r.Get(ctx, req.NamespacedName, &secret); err != nil {
 		if r.operationType != store.OperationDelete {
-			logger.Error(err, "Unable to fetch ConfigMap")
-			return ctrl.Result{}, fmt.Errorf("unable to fetch ConfigMap: %w", err)
+			logger.Error(err, "Unable to fetch Secret")
+			return ctrl.Result{}, fmt.Errorf("unable to fetch Secret: %w", err)
 		}
 	}
 
-	resourceInfo := GetConfigMapInfo(configMap)
-	logger.Info("ConfigMap event received",
+	resourceInfo := GetSecretInfo(secret)
+	logger.Info("Secret event received",
 		"operation", r.operationType,
 		"name", resourceInfo.Name,
 		"namespace", resourceInfo.Namespace)
@@ -53,7 +53,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Check if this is an update event
 	if r.operationType == store.OperationUpdate {
 		// Get matching restart rules from the store
-		restartRules := r.RestartRuleStore.GetForConfigMap(ctx, configMap, store.OperationUpdate)
+		restartRules := r.RestartRuleStore.GetForSecret(ctx, secret, store.OperationUpdate)
 
 		// Process restart rules using common function
 		if err := r.ProcessRestartRules(ctx, restartRules, resourceInfo.Name, resourceInfo.Type); err != nil {
@@ -65,10 +65,10 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ConfigMapReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *SecretReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		Named("configmap").
+		Named("secret").
 		WithEventFilter(r.CreateEventFilter()).
-		For(&corev1.ConfigMap{}).
+		For(&corev1.Secret{}).
 		Complete(r)
 }

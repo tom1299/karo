@@ -70,11 +70,24 @@ func main() {
 	}
 
 	if err := (&controller.ConfigMapReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		RestartRuleStore: restartRuleStore,
+		BaseReconciler: controller.BaseReconciler{
+			Client:           mgr.GetClient(),
+			RestartRuleStore: restartRuleStore,
+		},
+		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ConfigMap")
+		os.Exit(1)
+	}
+
+	if err := (&controller.SecretReconciler{
+		BaseReconciler: controller.BaseReconciler{
+			Client:           mgr.GetClient(),
+			RestartRuleStore: restartRuleStore,
+		},
+		Scheme: mgr.GetScheme(),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "Secret")
 		os.Exit(1)
 	}
 

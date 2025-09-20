@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.3.0
+
+  test:
+    name: Run Tests with Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Running Tests with Coverage
+        run: |
+          go mod tidy
+          make test
+          make test-coverage
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  e2e-test:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Create Kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: karo-test-e2e
+
+      - name: Run E2E tests
+        run: |
+          go mod tidy
+          make test-e2e
+
+      - name: Upload E2E test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-logs
+          path: test-e2e.log
+          retention-days: 30

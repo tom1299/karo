@@ -224,6 +224,7 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 			$(KIND) create cluster --name $(KIND_CLUSTER) ;; \
 	esac
 
+# TODO: Allign this target more with common practices
 .PHONY: test-e2e
 test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
 	@echo "Setting kubectl context to use kind cluster..."
@@ -231,14 +232,19 @@ test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expect
 	@echo "Installing CRDs..."
 	@$(MAKE) install
 	@echo "Starting controller in background..."
-	@go run ./cmd/main.go >test-e2e.log 2>&1 &
-	@CONTROLLER_PID=$$!; \
+	@set -e; \
+	go run ./cmd/main.go >test-e2e.log 2>&1 & \
+	CONTROLLER_PID=$$!; \
 	echo "Controller PID: $$CONTROLLER_PID"; \
 	echo "Waiting for controller to be ready..."; \
 	sleep 5; \
 	echo "Running e2e tests..."; \
-	go test ./test/e2e/ -v -timeout=10m; \
-	TEST_EXIT_CODE=$$?; \
+	go clean -testcache; \
+	if go test ./test/e2e/ -v -timeout=10m; then \
+		TEST_EXIT_CODE=0; \
+	else \
+		TEST_EXIT_CODE=$$?; \
+	fi; \
 	echo "Stopping controller..."; \
 	kill $$CONTROLLER_PID || true; \
 	echo "Cleaning up CRDs..."; \

@@ -118,6 +118,7 @@ func testConfigMapRestart(ctx context.Context, t *testing.T, clients *testClient
 
 	restartTime := waitForDeploymentRestart(ctx, t, clients.k8sClient, "", "ConfigMap")
 	t.Log("SUCCESS: Deployment was successfully rolled after ConfigMap update")
+
 	return restartTime
 }
 
@@ -138,6 +139,7 @@ func testSecretRestart(ctx context.Context, t *testing.T, clients *testClients, 
 
 	restartTime := waitForDeploymentRestart(ctx, t, clients.k8sClient, previousRestartTime, "Secret")
 	t.Log("SUCCESS: Deployment was successfully rolled after Secret update")
+
 	return restartTime
 }
 
@@ -178,7 +180,12 @@ func updateSecretContent(ctx context.Context, k8sClient client.Client) error {
 	return k8sClient.Update(ctx, updatedSecret)
 }
 
-func waitForDeploymentRestart(ctx context.Context, t *testing.T, k8sClient client.Client, previousRestartTime, resourceType string) string {
+func waitForDeploymentRestart(
+	ctx context.Context,
+	t *testing.T,
+	k8sClient client.Client,
+	previousRestartTime, resourceType string,
+) string {
 	t.Logf("Checking if deployment was rolled after %s update...", resourceType)
 	var restartTime string
 
@@ -195,6 +202,7 @@ func waitForDeploymentRestart(ctx context.Context, t *testing.T, k8sClient clien
 				if previousRestartTime == "" || currentRestartTime != previousRestartTime {
 					t.Logf("Found restart annotation after %s update: %s = %s", resourceType, restartAnnotation, currentRestartTime)
 					restartTime = currentRestartTime
+
 					return true, nil
 				}
 				t.Logf("Restart annotation exists but hasn't changed since last update: %s", currentRestartTime)
@@ -203,6 +211,7 @@ func waitForDeploymentRestart(ctx context.Context, t *testing.T, k8sClient clien
 
 		t.Logf("Restart annotation not found after %s update, current annotations: %v",
 			resourceType, currentDeployment.Spec.Template.Annotations)
+
 		return false, nil
 	})
 

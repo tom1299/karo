@@ -30,6 +30,7 @@ import (
 
 type SecretReconciler struct {
 	BaseReconciler
+
 	Scheme *runtime.Scheme
 }
 
@@ -40,6 +41,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	if err := r.Get(ctx, req.NamespacedName, &secret); err != nil {
 		if r.operationType != store.OperationDelete {
 			logger.Error(err, "Unable to fetch Secret")
+
 			return ctrl.Result{}, fmt.Errorf("unable to fetch Secret: %w", err)
 		}
 	}

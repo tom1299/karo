@@ -28,6 +28,8 @@ import (
 )
 
 func TestNewMemoryRestartRuleStore(t *testing.T) {
+	t.Parallel()
+
 	store := NewMemoryRestartRuleStore()
 	if store == nil {
 		t.Fatal("NewMemoryRestartRuleStore() returned nil")
@@ -41,6 +43,8 @@ func TestNewMemoryRestartRuleStore(t *testing.T) {
 }
 
 func TestMemoryRestartRuleStore_Add(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		rule *karov1alpha1.RestartRule
@@ -66,6 +70,8 @@ func TestMemoryRestartRuleStore_Add(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			store := NewMemoryRestartRuleStore()
 			ctx := context.Background()
 
@@ -80,6 +86,8 @@ func TestMemoryRestartRuleStore_Add(t *testing.T) {
 }
 
 func TestMemoryRestartRuleStore_Add_Update(t *testing.T) {
+	t.Parallel()
+
 	store := NewMemoryRestartRuleStore()
 	ctx := context.Background()
 
@@ -156,6 +164,8 @@ func TestMemoryRestartRuleStore_Remove(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			store := NewMemoryRestartRuleStore()
 			ctx := context.Background()
 			tt.setup(store)
@@ -374,6 +384,8 @@ func TestMemoryRestartRuleStore_GetForSecret(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			store := NewMemoryRestartRuleStore()
 			ctx := context.Background()
 
@@ -493,6 +505,8 @@ func TestMemoryRestartRuleStore_GetForConfigMap(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			store := NewMemoryRestartRuleStore()
 			ctx := context.Background()
 
@@ -658,6 +672,8 @@ func TestMemoryRestartRuleStore_GetForKind(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			store := NewMemoryRestartRuleStore()
 			ctx := context.Background()
 

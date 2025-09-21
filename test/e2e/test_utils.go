@@ -48,6 +48,7 @@ func setupScheme() *runtime.Scheme {
 	_ = corev1.AddToScheme(scheme)
 	_ = appsv1.AddToScheme(scheme)
 	_ = karov1alpha1.AddToScheme(scheme)
+
 	return scheme
 }
 
@@ -62,6 +63,7 @@ func createNamespace(ctx context.Context, clientset *kubernetes.Clientset, name 
 	if err != nil && !errors.IsAlreadyExists(err) {
 		return err
 	}
+
 	return nil
 }
 
@@ -328,7 +330,13 @@ func cleanupNamespace(ctx context.Context, t *testing.T, clientset *kubernetes.C
 	}
 }
 
-func deleteResource(ctx context.Context, t *testing.T, k8sClient client.Client, resource client.Object, resourceType string) {
+func deleteResource(
+	ctx context.Context,
+	t *testing.T,
+	k8sClient client.Client,
+	resource client.Object,
+	resourceType string,
+) {
 	if err := k8sClient.Delete(ctx, resource); err != nil && !errors.IsNotFound(err) {
 		t.Logf("Failed to delete %s: %v", resourceType, err)
 	}

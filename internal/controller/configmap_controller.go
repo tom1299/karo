@@ -30,6 +30,7 @@ import (
 
 type ConfigMapReconciler struct {
 	BaseReconciler
+
 	Scheme *runtime.Scheme
 }
 
@@ -40,6 +41,7 @@ func (r *ConfigMapReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	if err := r.Get(ctx, req.NamespacedName, &configMap); err != nil {
 		if r.operationType != store.OperationDelete {
 			logger.Error(err, "Unable to fetch ConfigMap")
+
 			return ctrl.Result{}, fmt.Errorf("unable to fetch ConfigMap: %w", err)
 		}
 	}

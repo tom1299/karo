@@ -65,6 +65,7 @@ func (s *MemoryRestartRuleStore) GetForKind(ctx context.Context, meta v1.ObjectM
 			matchedRules = append(matchedRules, rule)
 		}
 	}
+
 	return matchedRules
 }
 
@@ -74,6 +75,7 @@ func (s *MemoryRestartRuleStore) ruleMatchesResource(rule *karov1alpha1.RestartR
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -96,6 +98,7 @@ func (s *MemoryRestartRuleStore) matchesNameOrSelector(change karov1alpha1.Chang
 
 	if change.Selector != nil {
 		selector, err := v1.LabelSelectorAsSelector(change.Selector)
+
 		return err == nil && selector.Matches(labels.Set(meta.Labels))
 	}
 

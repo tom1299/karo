@@ -36,6 +36,7 @@ import (
 // BaseReconciler contains common fields and methods for resource controllers
 type BaseReconciler struct {
 	client.Client
+
 	RestartRuleStore store.RestartRuleStore
 	operationType    store.OperationType
 }
@@ -94,6 +95,7 @@ func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules [
 						"resource", resourceName,
 						"resourceType", resourceType,
 						"restartRule", rule.Name)
+
 					continue
 				}
 
@@ -116,14 +118,17 @@ func (r *BaseReconciler) CreateEventFilter() predicate.Funcs {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			r.operationType = store.OperationCreate
+
 			return true
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			r.operationType = store.OperationUpdate
+
 			return true
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			r.operationType = store.OperationDelete
+
 			return true
 		},
 	}

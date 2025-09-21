@@ -1,5 +1,5 @@
 # Image URL to use all building/pushing image targets
-IMG ?= controller:latest
+IMG ?= karo:latest
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
@@ -82,6 +82,10 @@ build: manifests generate fmt vet ## Build manager binary.
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./cmd/main.go
+
+.PHONY: docker-build
+docker-build: ## Build docker image with the manager.
+	$(CONTAINER_TOOL) build -t ${IMG} .
 
 ##@ Deployment
 

@@ -40,7 +40,7 @@ type ChangeSpec struct {
 	// +required
 	Kind string `json:"kind"`
 
-	// Name specifies the name of the resource to watch
+	// Name specifies the name of the resource to watch (supports regex patterns)
 	// +optional
 	Name string `json:"name,omitempty"`
 

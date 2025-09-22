@@ -61,6 +61,7 @@ spec:
                       type: string
                     name:
                       description: Name specifies the name of the resource to watch
+                        (supports regex patterns)
                       type: string
                     selector:
                       description: Selector allows watching resources by label selector

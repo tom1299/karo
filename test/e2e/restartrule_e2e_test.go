@@ -23,9 +23,12 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 
+	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
@@ -231,4 +234,275 @@ func validateTestResults(t *testing.T, configMapRestartTime, secretRestartTime s
 	t.Logf("ConfigMap restart time: %s", configMapRestartTime)
 	t.Logf("Secret restart time: %s", secretRestartTime)
 	t.Log("Both ConfigMap and Secret updates successfully triggered deployment restarts")
+}
+
+func TestRestartRuleRegexE2E(t *testing.T) {
+	ctx := context.Background()
+	clients := setupTestClients(t)
+
+	setupTestEnvironmentForRegex(ctx, t, clients)
+	defer cleanupRegexTest(ctx, t, clients.clientset, clients.k8sClient)
+
+	testRegexConfigMapRestart(ctx, t, clients)
+	testRegexSecretRestart(ctx, t, clients)
+	testRegexMultipleResources(ctx, t, clients)
+
+	t.Log("=== Regex E2E tests completed successfully ===")
+}
+
+func setupTestEnvironmentForRegex(ctx context.Context, t *testing.T, clients *testClients) {
+	t.Log("Creating test namespace for regex tests...")
+	if err := createNamespace(ctx, clients.clientset, regexTestNamespace); err != nil {
+		t.Fatalf("Failed to create namespace: %v", err)
+	}
+
+	t.Log("Creating multiple ConfigMaps with different names...")
+	configMaps := []*corev1.ConfigMap{
+		createRegexTestConfigMap(regexTestNamespace, "frontend-nginx-app-config"),
+		createRegexTestConfigMap(regexTestNamespace, "backend-nginx-api-config"),
+		createRegexTestConfigMap(regexTestNamespace, "apache-web-config"),
+	}
+
+	for _, cm := range configMaps {
+		if err := clients.k8sClient.Create(ctx, cm); err != nil {
+			t.Fatalf("Failed to create ConfigMap %s: %v", cm.Name, err)
+		}
+	}
+
+	t.Log("Creating multiple Secrets with different names...")
+	secrets := []*corev1.Secret{
+		createRegexTestSecret(regexTestNamespace, "nginx-prod-secret"),
+		createRegexTestSecret(regexTestNamespace, "nginx-dev-secret"),
+		createRegexTestSecret(regexTestNamespace, "apache-secret"),
+	}
+
+	for _, secret := range secrets {
+		if err := clients.k8sClient.Create(ctx, secret); err != nil {
+			t.Fatalf("Failed to create Secret %s: %v", secret.Name, err)
+		}
+	}
+
+	t.Log("Creating test deployments...")
+	deployments := []*appsv1.Deployment{
+		createRegexTestDeployment(regexTestNamespace, "nginx-frontend"),
+		createRegexTestDeployment(regexTestNamespace, "nginx-backend"),
+	}
+
+	for _, dep := range deployments {
+		if err := clients.k8sClient.Create(ctx, dep); err != nil {
+			t.Fatalf("Failed to create Deployment %s: %v", dep.Name, err)
+		}
+
+		if err := waitForDeploymentReady(ctx, clients.clientset, regexTestNamespace, dep.Name); err != nil {
+			t.Fatalf("Deployment %s did not become ready: %v", dep.Name, err)
+		}
+	}
+}
+
+func testRegexConfigMapRestart(ctx context.Context, t *testing.T, clients *testClients) {
+	t.Log("=== Testing ConfigMap regex pattern matching ===")
+
+	t.Log("Creating RestartRule with regex pattern for ConfigMaps...")
+	restartRule := createRegexConfigMapRestartRule(regexTestNamespace)
+	if err := clients.k8sClient.Create(ctx, restartRule); err != nil {
+		t.Fatalf("Failed to create RestartRule: %v", err)
+	}
+	time.Sleep(5 * time.Second)
+
+	t.Log("Updating ConfigMap that matches regex pattern...")
+	err := updateRegexConfigMapContent(ctx, clients.k8sClient, regexTestNamespace, "frontend-nginx-app-config")
+	if err != nil {
+		t.Fatalf("Failed to update ConfigMap: %v", err)
+	}
+
+	checkDeploymentRestarted(ctx, t, clients.k8sClient, regexTestNamespace, "nginx-frontend", "ConfigMap regex")
+	t.Log("SUCCESS: Deployment was restarted after ConfigMap with matching regex was updated")
+}
+
+func testRegexSecretRestart(ctx context.Context, t *testing.T, clients *testClients) {
+	t.Log("=== Testing Secret regex pattern matching ===")
+
+	t.Log("Creating RestartRule with regex pattern for Secrets...")
+	restartRule := createRegexSecretRestartRule(regexTestNamespace)
+	if err := clients.k8sClient.Create(ctx, restartRule); err != nil {
+		t.Fatalf("Failed to create RestartRule: %v", err)
+	}
+	time.Sleep(5 * time.Second)
+
+	t.Log("Updating Secret that matches regex pattern...")
+	if err := updateRegexSecretContent(ctx, clients.k8sClient, regexTestNamespace, "nginx-prod-secret"); err != nil {
+		t.Fatalf("Failed to update Secret: %v", err)
+	}
+
+	checkDeploymentRestarted(ctx, t, clients.k8sClient, regexTestNamespace, "nginx-frontend", "Secret regex")
+	t.Log("SUCCESS: Deployment was restarted after Secret with matching regex was updated")
+}
+
+func testRegexMultipleResources(ctx context.Context, t *testing.T, clients *testClients) {
+	t.Log("=== Testing that non-matching resources are not affected ===")
+
+	// Create a separate RestartRule that should NOT match apache resources
+	t.Log("Creating RestartRule for non-matching test...")
+	nonMatchingRule := &karov1alpha1.RestartRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "apache-non-match-rule",
+			Namespace: regexTestNamespace,
+		},
+		Spec: karov1alpha1.RestartRuleSpec{
+			Changes: []karov1alpha1.ChangeSpec{
+				{
+					Kind:       "ConfigMap",
+					Name:       ".*nginx.*-config", // This should NOT match apache-web-config
+					ChangeType: []string{"Update"},
+				},
+			},
+			Targets: []karov1alpha1.TargetSpec{
+				{
+					Kind: "Deployment",
+					Name: "nginx-backend", // Target a different deployment
+				},
+			},
+		},
+	}
+
+	if err := clients.k8sClient.Create(ctx, nonMatchingRule); err != nil {
+		t.Fatalf("Failed to create non-matching RestartRule: %v", err)
+	}
+	time.Sleep(5 * time.Second)
+
+	// Get current restart time for comparison
+	currentDeployment := &appsv1.Deployment{}
+	if err := clients.k8sClient.Get(
+		ctx, client.ObjectKey{Namespace: regexTestNamespace, Name: "nginx-backend"}, currentDeployment); err != nil {
+		t.Fatalf("Failed to get deployment: %v", err)
+	}
+
+	var previousRestartTime string
+	if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
+		previousRestartTime = annotations["karo.jeeatwork.com/restartedAt"]
+	}
+
+	t.Log("Updating ConfigMap that does NOT match regex pattern...")
+	if err := updateRegexConfigMapContent(ctx, clients.k8sClient, regexTestNamespace, "apache-web-config"); err != nil {
+		t.Fatalf("Failed to update ConfigMap: %v", err)
+	}
+
+	// Wait to ensure the controller has time to process
+	time.Sleep(15 * time.Second)
+
+	// Verify deployment was NOT restarted
+	updatedDeployment := &appsv1.Deployment{}
+	if err := clients.k8sClient.Get(
+		ctx, client.ObjectKey{Namespace: regexTestNamespace, Name: "nginx-backend"}, updatedDeployment); err != nil {
+		t.Fatalf("Failed to get deployment: %v", err)
+	}
+
+	var currentRestartTime string
+	if annotations := updatedDeployment.Spec.Template.Annotations; annotations != nil {
+		currentRestartTime = annotations["karo.jeeatwork.com/restartedAt"]
+	}
+
+	if currentRestartTime != previousRestartTime {
+		t.Fatalf("Deployment was unexpectedly restarted after updating non-matching ConfigMap (previous: %s, current: %s)",
+			previousRestartTime, currentRestartTime)
+	}
+
+	t.Log("SUCCESS: Deployment was NOT restarted after updating non-matching ConfigMap")
+}
+
+func checkDeploymentRestarted(
+	ctx context.Context,
+	t *testing.T,
+	k8sClient client.Client,
+	namespace, deploymentName, resourceType string,
+) {
+	t.Logf("Checking if deployment %s was restarted after %s update...", deploymentName, resourceType)
+
+	err := wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		currentDeployment := &appsv1.Deployment{}
+		if err := k8sClient.Get(
+			ctx, client.ObjectKey{Namespace: namespace, Name: deploymentName}, currentDeployment); err != nil {
+			return false, err
+		}
+
+		restartAnnotation := "karo.jeeatwork.com/restartedAt"
+		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
+			if _, exists := annotations[restartAnnotation]; exists {
+				t.Logf("Found restart annotation after %s update: %s = %s",
+					resourceType, restartAnnotation, annotations[restartAnnotation])
+
+				return true, nil
+			}
+		}
+
+		return false, nil
+	})
+
+	if err != nil {
+		t.Fatalf("Error while waiting for deployment restart after %s update: %v", resourceType, err)
+	}
+}
+
+func updateRegexConfigMapContent(ctx context.Context, k8sClient client.Client, namespace, configMapName string) error {
+	updatedConfigMap := &corev1.ConfigMap{}
+	if err := k8sClient.Get(
+		ctx, client.ObjectKey{Namespace: namespace, Name: configMapName}, updatedConfigMap); err != nil {
+		return err
+	}
+
+	updatedConfigMap.Data["config"] = "updated-config-data"
+
+	return k8sClient.Update(ctx, updatedConfigMap)
+}
+
+func updateRegexSecretContent(ctx context.Context, k8sClient client.Client, namespace, secretName string) error {
+	updatedSecret := &corev1.Secret{}
+	if err := k8sClient.Get(
+		ctx, client.ObjectKey{Namespace: namespace, Name: secretName}, updatedSecret); err != nil {
+		return err
+	}
+
+	updatedSecret.Data["api-key"] = []byte("updated-secret-data")
+
+	return k8sClient.Update(ctx, updatedSecret)
+}
+
+func cleanupRegexTest(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset, k8sClient client.Client) {
+	t.Log("Cleaning up regex test resources...")
+
+	// Clean up RestartRules
+	restartRules := []*karov1alpha1.RestartRule{
+		{ObjectMeta: metav1.ObjectMeta{Name: "nginx-configmap-regex-rule", Namespace: regexTestNamespace}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "nginx-secret-regex-rule", Namespace: regexTestNamespace}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "apache-non-match-rule", Namespace: regexTestNamespace}},
+	}
+
+	for _, rule := range restartRules {
+		deleteResource(ctx, t, k8sClient, rule, "RestartRule")
+	}
+
+	// Clean up other resources (deployments, configmaps, secrets)
+	deployments := []string{"nginx-frontend", "nginx-backend"}
+	for _, name := range deployments {
+		deleteResource(ctx, t, k8sClient, &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: regexTestNamespace}}, "Deployment")
+	}
+
+	configMaps := []string{"frontend-nginx-app-config", "backend-nginx-api-config", "apache-web-config"}
+	for _, name := range configMaps {
+		deleteResource(ctx, t, k8sClient, &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: regexTestNamespace}}, "ConfigMap")
+	}
+
+	secrets := []string{"nginx-prod-secret", "nginx-dev-secret", "apache-secret"}
+	for _, name := range secrets {
+		deleteResource(ctx, t, k8sClient, &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: regexTestNamespace}}, "Secret")
+	}
+
+	// Clean up namespace
+	if err := clientset.CoreV1().Namespaces().Delete(
+		ctx, regexTestNamespace, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+		t.Logf("Failed to delete regex test namespace: %v", err)
+	}
 }

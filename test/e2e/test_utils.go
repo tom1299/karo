@@ -34,13 +34,14 @@ import (
 )
 
 const (
-	configMapName   = "nginx-config"
-	secretName      = "nginx-secret"
-	deploymentName  = "nginx"
-	interval        = 10 * time.Second
-	restartRuleName = "nginx-restart-rule"
-	testNamespace   = "karo-e2e-test"
-	timeout         = 5 * time.Minute
+	configMapName      = "nginx-config"
+	secretName         = "nginx-secret"
+	deploymentName     = "nginx"
+	interval           = 10 * time.Second
+	restartRuleName    = "nginx-restart-rule"
+	testNamespace      = "karo-e2e-test"
+	regexTestNamespace = "karo-regex-e2e-test"
+	timeout            = 5 * time.Minute
 )
 
 func setupScheme() *runtime.Scheme {
@@ -352,5 +353,130 @@ func getResourceType(resource client.Object) string {
 		return "Secret"
 	default:
 		return "Resource"
+	}
+}
+
+// Helper functions for regex e2e tests
+
+func createRegexTestConfigMap(namespace, name string) *corev1.ConfigMap {
+	return &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "test",
+			},
+		},
+		Data: map[string]string{
+			"config": "initial-config-data",
+		},
+	}
+}
+
+func createRegexTestSecret(namespace, name string) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "test",
+			},
+		},
+		Data: map[string][]byte{
+			"api-key": []byte("initial-secret-data"),
+		},
+	}
+}
+
+func createRegexTestDeployment(namespace, name string) *appsv1.Deployment {
+	replicas := int32(1)
+
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+			Labels: map[string]string{
+				"app": "test",
+			},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Replicas: &replicas,
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"app":        "test",
+					"deployment": name,
+				},
+			},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"app":        "test",
+						"deployment": name,
+					},
+				},
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{
+							Name:  "test-container",
+							Image: "nginx:1.21-alpine",
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: 80,
+									Protocol:      corev1.ProtocolTCP,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func createRegexConfigMapRestartRule(namespace string) *karov1alpha1.RestartRule {
+	return &karov1alpha1.RestartRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nginx-configmap-regex-rule",
+			Namespace: namespace,
+		},
+		Spec: karov1alpha1.RestartRuleSpec{
+			Changes: []karov1alpha1.ChangeSpec{
+				{
+					Kind:       "ConfigMap",
+					Name:       ".*nginx.*-config",
+					ChangeType: []string{"Update"},
+				},
+			},
+			Targets: []karov1alpha1.TargetSpec{
+				{
+					Kind: "Deployment",
+					Name: "nginx-frontend",
+				},
+			},
+		},
+	}
+}
+
+func createRegexSecretRestartRule(namespace string) *karov1alpha1.RestartRule {
+	return &karov1alpha1.RestartRule{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "nginx-secret-regex-rule",
+			Namespace: namespace,
+		},
+		Spec: karov1alpha1.RestartRuleSpec{
+			Changes: []karov1alpha1.ChangeSpec{
+				{
+					Kind:       "Secret",
+					Name:       ".*nginx.*-secret",
+					ChangeType: []string{"Update"},
+				},
+			},
+			Targets: []karov1alpha1.TargetSpec{
+				{
+					Kind: "Deployment",
+					Name: "nginx-frontend",
+				},
+			},
+		},
 	}
 }

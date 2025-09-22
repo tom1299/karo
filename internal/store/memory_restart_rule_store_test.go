@@ -753,6 +753,317 @@ func TestMemoryRestartRuleStore_EmptyChanges(t *testing.T) {
 	}
 }
 
+func TestMemoryRestartRuleStore_matchesNameOrSelector_Regex(t *testing.T) {
+	store := NewMemoryRestartRuleStore()
+
+	tests := []struct {
+		name     string
+		change   karov1alpha1.ChangeSpec
+		meta     metav1.ObjectMeta
+		expected bool
+	}{
+		{
+			name: "exact name match (backward compatibility)",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: "nginx-config",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "nginx-config",
+			},
+			expected: true,
+		},
+		{
+			name: "regex pattern with wildcard",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: ".*nginx.*-config",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "frontend-nginx-app-config",
+			},
+			expected: true,
+		},
+		{
+			name: "regex pattern with specific prefix",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "Secret",
+				Name: "^nginx.*-secret$",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "nginx-prod-secret",
+			},
+			expected: true,
+		},
+		{
+			name: "regex pattern no match",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: ".*apache.*-config",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "nginx-app-config",
+			},
+			expected: false,
+		},
+		{
+			name: "regex pattern with character classes",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "Secret",
+				Name: "app-[0-9]+-secret",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "app-123-secret",
+			},
+			expected: true,
+		},
+		{
+			name: "regex pattern with character classes no match",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "Secret",
+				Name: "app-[0-9]+-secret",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "app-abc-secret",
+			},
+			expected: false,
+		},
+		{
+			name: "invalid regex falls back to exact match - should match",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: "[invalid-regex",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "[invalid-regex",
+			},
+			expected: true,
+		},
+		{
+			name: "invalid regex falls back to exact match - should not match",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: "[invalid-regex",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "different-name",
+			},
+			expected: false,
+		},
+		{
+			name: "empty name should not match",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: "",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "any-name",
+			},
+			expected: false,
+		},
+		{
+			name: "regex with OR operator",
+			change: karov1alpha1.ChangeSpec{
+				Kind: "ConfigMap",
+				Name: "(nginx|apache)-config",
+			},
+			meta: metav1.ObjectMeta{
+				Name: "apache-config",
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := store.matchesNameOrSelector(tt.change, tt.meta)
+			if result != tt.expected {
+				t.Errorf("matchesNameOrSelector() = %v, expected %v", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMemoryRestartRuleStore_GetForSecret_Regex(t *testing.T) {
+	tests := []struct {
+		name      string
+		secret    v1.Secret
+		operation OperationType
+		rules     []*karov1alpha1.RestartRule
+		expected  int
+	}{
+		{
+			name: "regex pattern matches multiple secrets",
+			secret: v1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "nginx-prod-secret",
+					Namespace: "default",
+				},
+			},
+			operation: OperationUpdate,
+			rules: []*karov1alpha1.RestartRule{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-rule",
+						Namespace: "default",
+					},
+					Spec: karov1alpha1.RestartRuleSpec{
+						Changes: []karov1alpha1.ChangeSpec{
+							{
+								Kind: "Secret",
+								Name: ".*nginx.*-secret",
+							},
+						},
+					},
+				},
+			},
+			expected: 1,
+		},
+		{
+			name: "regex pattern does not match",
+			secret: v1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "apache-prod-secret",
+					Namespace: "default",
+				},
+			},
+			operation: OperationUpdate,
+			rules: []*karov1alpha1.RestartRule{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-rule",
+						Namespace: "default",
+					},
+					Spec: karov1alpha1.RestartRuleSpec{
+						Changes: []karov1alpha1.ChangeSpec{
+							{
+								Kind: "Secret",
+								Name: "^nginx.*-secret$",
+							},
+						},
+					},
+				},
+			},
+			expected: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			store := NewMemoryRestartRuleStore()
+			ctx := context.Background()
+
+			for _, rule := range tt.rules {
+				store.Add(ctx, rule)
+			}
+
+			result := store.GetForSecret(ctx, tt.secret, tt.operation)
+			if len(result) != tt.expected {
+				t.Errorf("GetForSecret() returned %d rules, want %d", len(result), tt.expected)
+			}
+		})
+	}
+}
+
+func TestMemoryRestartRuleStore_GetForConfigMap_Regex(t *testing.T) {
+	tests := []struct {
+		name      string
+		configMap v1.ConfigMap
+		operation OperationType
+		rules     []*karov1alpha1.RestartRule
+		expected  int
+	}{
+		{
+			name: "regex pattern matches configmap",
+			configMap: v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "frontend-nginx-app-config",
+					Namespace: "default",
+				},
+			},
+			operation: OperationUpdate,
+			rules: []*karov1alpha1.RestartRule{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-rule",
+						Namespace: "default",
+					},
+					Spec: karov1alpha1.RestartRuleSpec{
+						Changes: []karov1alpha1.ChangeSpec{
+							{
+								Kind: "ConfigMap",
+								Name: ".*nginx.*-config",
+							},
+						},
+					},
+				},
+			},
+			expected: 1,
+		},
+		{
+			name: "multiple regex patterns match same configmap",
+			configMap: v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "app-123-config",
+					Namespace: "default",
+				},
+			},
+			operation: OperationUpdate,
+			rules: []*karov1alpha1.RestartRule{
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-rule-1",
+						Namespace: "default",
+					},
+					Spec: karov1alpha1.RestartRuleSpec{
+						Changes: []karov1alpha1.ChangeSpec{
+							{
+								Kind: "ConfigMap",
+								Name: "app-[0-9]+-config",
+							},
+						},
+					},
+				},
+				{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "test-rule-2",
+						Namespace: "default",
+					},
+					Spec: karov1alpha1.RestartRuleSpec{
+						Changes: []karov1alpha1.ChangeSpec{
+							{
+								Kind: "ConfigMap",
+								Name: "app-.*-config",
+							},
+						},
+					},
+				},
+			},
+			expected: 2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			store := NewMemoryRestartRuleStore()
+			ctx := context.Background()
+
+			for _, rule := range tt.rules {
+				store.Add(ctx, rule)
+			}
+
+			result := store.GetForConfigMap(ctx, tt.configMap, tt.operation)
+			if len(result) != tt.expected {
+				t.Errorf("GetForConfigMap() returned %d rules, want %d", len(result), tt.expected)
+			}
+		})
+	}
+}
+
 func TestMemoryRestartRuleStore_matchesOperationType(t *testing.T) {
 	store := NewMemoryRestartRuleStore()
 

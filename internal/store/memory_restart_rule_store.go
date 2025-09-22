@@ -18,6 +18,7 @@ package store
 
 import (
 	"context"
+	"regexp"
 
 	v2 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,7 +94,14 @@ func (s *MemoryRestartRuleStore) changeMatchesResource(change karov1alpha1.Chang
 
 func (s *MemoryRestartRuleStore) matchesNameOrSelector(change karov1alpha1.ChangeSpec, meta v1.ObjectMeta) bool {
 	if change.Name != "" {
-		return change.Name == meta.Name
+		// Compile the regex pattern - if it's not a valid regex, treat it as literal string
+		regex, err := regexp.Compile(change.Name)
+		if err != nil {
+			// If regex compilation fails, fall back to exact string matching
+			return change.Name == meta.Name
+		}
+
+		return regex.MatchString(meta.Name)
 	}
 
 	if change.Selector != nil {

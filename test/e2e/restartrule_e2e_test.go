@@ -112,7 +112,11 @@ func testConfigMapRestart(ctx context.Context, t *testing.T, clients *testClient
 	if err := clients.k8sClient.Create(ctx, restartRule); err != nil {
 		t.Fatalf("Failed to create RestartRule: %v", err)
 	}
-	time.Sleep(5 * time.Second)
+
+	t.Log("Waiting for RestartRule to become Active...")
+	if err := waitForRestartRuleReady(ctx, clients.k8sClient, testNamespace, restartRuleName); err != nil {
+		t.Fatalf("RestartRule did not become ready: %v", err)
+	}
 
 	t.Log("Updating ConfigMap to trigger restart...")
 	if err := updateConfigMapContent(ctx, clients.k8sClient); err != nil {
@@ -120,7 +124,14 @@ func testConfigMapRestart(ctx context.Context, t *testing.T, clients *testClient
 	}
 
 	restartTime := waitForDeploymentRestart(ctx, t, clients.k8sClient, "", "ConfigMap")
-	t.Log("SUCCESS: Deployment was successfully rolled after ConfigMap update")
+
+	// Also check that restart event was recorded in the RestartRule status
+	t.Log("Checking that restart event was recorded in RestartRule status...")
+	if err := waitForRestartEvent(ctx, clients.k8sClient, testNamespace, restartRuleName, deploymentName); err != nil {
+		t.Fatalf("Restart event was not recorded in RestartRule status: %v", err)
+	}
+
+	t.Log("SUCCESS: Deployment was successfully rolled after ConfigMap update and event was recorded")
 
 	return restartTime
 }
@@ -133,7 +144,11 @@ func testSecretRestart(ctx context.Context, t *testing.T, clients *testClients, 
 	if err := clients.k8sClient.Create(ctx, secretRestartRule); err != nil {
 		t.Fatalf("Failed to create Secret RestartRule: %v", err)
 	}
-	time.Sleep(5 * time.Second)
+
+	t.Log("Waiting for Secret RestartRule to become Active...")
+	if err := waitForRestartRuleReady(ctx, clients.k8sClient, testNamespace, "nginx-secret-restart-rule"); err != nil {
+		t.Fatalf("Secret RestartRule did not become ready: %v", err)
+	}
 
 	t.Log("Updating Secret to trigger restart...")
 	if err := updateSecretContent(ctx, clients.k8sClient); err != nil {
@@ -141,7 +156,14 @@ func testSecretRestart(ctx context.Context, t *testing.T, clients *testClients, 
 	}
 
 	restartTime := waitForDeploymentRestart(ctx, t, clients.k8sClient, previousRestartTime, "Secret")
-	t.Log("SUCCESS: Deployment was successfully rolled after Secret update")
+
+	// Also check that restart event was recorded in the RestartRule status
+	t.Log("Checking that restart event was recorded in Secret RestartRule status...")
+	if err := waitForRestartEvent(ctx, clients.k8sClient, testNamespace, "nginx-secret-restart-rule", deploymentName); err != nil {
+		t.Fatalf("Restart event was not recorded in Secret RestartRule status: %v", err)
+	}
+
+	t.Log("SUCCESS: Deployment was successfully rolled after Secret update and event was recorded")
 
 	return restartTime
 }
@@ -264,7 +286,7 @@ func setupTestEnvironmentForRegex(ctx context.Context, t *testing.T, clients *te
 	}
 
 	for _, cm := range configMaps {
-		if err := clients.k8sClient.Create(ctx, cm); err != nil {
+		if err := clients.k8sClient.Create(ctx, cm); err != nil && !errors.IsAlreadyExists(err) {
 			t.Fatalf("Failed to create ConfigMap %s: %v", cm.Name, err)
 		}
 	}
@@ -277,7 +299,7 @@ func setupTestEnvironmentForRegex(ctx context.Context, t *testing.T, clients *te
 	}
 
 	for _, secret := range secrets {
-		if err := clients.k8sClient.Create(ctx, secret); err != nil {
+		if err := clients.k8sClient.Create(ctx, secret); err != nil && !errors.IsAlreadyExists(err) {
 			t.Fatalf("Failed to create Secret %s: %v", secret.Name, err)
 		}
 	}
@@ -289,7 +311,7 @@ func setupTestEnvironmentForRegex(ctx context.Context, t *testing.T, clients *te
 	}
 
 	for _, dep := range deployments {
-		if err := clients.k8sClient.Create(ctx, dep); err != nil {
+		if err := clients.k8sClient.Create(ctx, dep); err != nil && !errors.IsAlreadyExists(err) {
 			t.Fatalf("Failed to create Deployment %s: %v", dep.Name, err)
 		}
 
@@ -307,7 +329,11 @@ func testRegexConfigMapRestart(ctx context.Context, t *testing.T, clients *testC
 	if err := clients.k8sClient.Create(ctx, restartRule); err != nil {
 		t.Fatalf("Failed to create RestartRule: %v", err)
 	}
-	time.Sleep(5 * time.Second)
+
+	t.Log("Waiting for ConfigMap regex RestartRule to become Active...")
+	if err := waitForRestartRuleReady(ctx, clients.k8sClient, regexTestNamespace, "nginx-configmap-regex-rule"); err != nil {
+		t.Fatalf("ConfigMap regex RestartRule did not become ready: %v", err)
+	}
 
 	t.Log("Updating ConfigMap that matches regex pattern...")
 	err := updateRegexConfigMapContent(ctx, clients.k8sClient, regexTestNamespace, "frontend-nginx-app-config")
@@ -316,7 +342,14 @@ func testRegexConfigMapRestart(ctx context.Context, t *testing.T, clients *testC
 	}
 
 	checkDeploymentRestarted(ctx, t, clients.k8sClient, regexTestNamespace, "nginx-frontend", "ConfigMap regex")
-	t.Log("SUCCESS: Deployment was restarted after ConfigMap with matching regex was updated")
+
+	// Also check that restart event was recorded in the RestartRule status
+	t.Log("Checking that restart event was recorded in regex ConfigMap RestartRule status...")
+	if err := waitForRestartEvent(ctx, clients.k8sClient, regexTestNamespace, "nginx-configmap-regex-rule", "nginx-frontend"); err != nil {
+		t.Fatalf("Restart event was not recorded in regex ConfigMap RestartRule status: %v", err)
+	}
+
+	t.Log("SUCCESS: Deployment was restarted after ConfigMap with matching regex was updated and event was recorded")
 }
 
 func testRegexSecretRestart(ctx context.Context, t *testing.T, clients *testClients) {
@@ -327,7 +360,11 @@ func testRegexSecretRestart(ctx context.Context, t *testing.T, clients *testClie
 	if err := clients.k8sClient.Create(ctx, restartRule); err != nil {
 		t.Fatalf("Failed to create RestartRule: %v", err)
 	}
-	time.Sleep(5 * time.Second)
+
+	t.Log("Waiting for Secret regex RestartRule to become Active...")
+	if err := waitForRestartRuleReady(ctx, clients.k8sClient, regexTestNamespace, "nginx-secret-regex-rule"); err != nil {
+		t.Fatalf("Secret regex RestartRule did not become ready: %v", err)
+	}
 
 	t.Log("Updating Secret that matches regex pattern...")
 	if err := updateRegexSecretContent(ctx, clients.k8sClient, regexTestNamespace, "nginx-prod-secret"); err != nil {
@@ -335,7 +372,14 @@ func testRegexSecretRestart(ctx context.Context, t *testing.T, clients *testClie
 	}
 
 	checkDeploymentRestarted(ctx, t, clients.k8sClient, regexTestNamespace, "nginx-frontend", "Secret regex")
-	t.Log("SUCCESS: Deployment was restarted after Secret with matching regex was updated")
+
+	// Also check that restart event was recorded in the RestartRule status
+	t.Log("Checking that restart event was recorded in regex Secret RestartRule status...")
+	if err := waitForRestartEvent(ctx, clients.k8sClient, regexTestNamespace, "nginx-secret-regex-rule", "nginx-frontend"); err != nil {
+		t.Fatalf("Restart event was not recorded in regex Secret RestartRule status: %v", err)
+	}
+
+	t.Log("SUCCESS: Deployment was restarted after Secret with matching regex was updated and event was recorded")
 }
 
 func testRegexMultipleResources(ctx context.Context, t *testing.T, clients *testClients) {
@@ -353,6 +397,7 @@ func testRegexMultipleResources(ctx context.Context, t *testing.T, clients *test
 				{
 					Kind:       "ConfigMap",
 					Name:       ".*nginx.*-config", // This should NOT match apache-web-config
+					IsRegex:    true,
 					ChangeType: []string{"Update"},
 				},
 			},
@@ -368,7 +413,11 @@ func testRegexMultipleResources(ctx context.Context, t *testing.T, clients *test
 	if err := clients.k8sClient.Create(ctx, nonMatchingRule); err != nil {
 		t.Fatalf("Failed to create non-matching RestartRule: %v", err)
 	}
-	time.Sleep(5 * time.Second)
+
+	t.Log("Waiting for non-matching RestartRule to become Active...")
+	if err := waitForRestartRuleReady(ctx, clients.k8sClient, regexTestNamespace, "apache-non-match-rule"); err != nil {
+		t.Fatalf("Non-matching RestartRule did not become ready: %v", err)
+	}
 
 	// Get current restart time for comparison
 	currentDeployment := &appsv1.Deployment{}
@@ -387,8 +436,8 @@ func testRegexMultipleResources(ctx context.Context, t *testing.T, clients *test
 		t.Fatalf("Failed to update ConfigMap: %v", err)
 	}
 
-	// Wait to ensure the controller has time to process
-	time.Sleep(15 * time.Second)
+	// Wait to ensure the controller has time to process (but no restart should happen)
+	time.Sleep(10 * time.Second)
 
 	// Verify deployment was NOT restarted
 	updatedDeployment := &appsv1.Deployment{}

@@ -776,8 +776,9 @@ func TestMemoryRestartRuleStore_matchesNameOrSelector_Regex(t *testing.T) {
 		{
 			name: "regex pattern with wildcard",
 			change: karov1alpha1.ChangeSpec{
-				Kind: "ConfigMap",
-				Name: ".*nginx.*-config",
+				Kind:    "ConfigMap",
+				Name:    ".*nginx.*-config",
+				IsRegex: true,
 			},
 			meta: metav1.ObjectMeta{
 				Name: "frontend-nginx-app-config",
@@ -787,8 +788,9 @@ func TestMemoryRestartRuleStore_matchesNameOrSelector_Regex(t *testing.T) {
 		{
 			name: "regex pattern with specific prefix",
 			change: karov1alpha1.ChangeSpec{
-				Kind: "Secret",
-				Name: "^nginx.*-secret$",
+				Kind:    "Secret",
+				Name:    "^nginx.*-secret$",
+				IsRegex: true,
 			},
 			meta: metav1.ObjectMeta{
 				Name: "nginx-prod-secret",
@@ -798,8 +800,9 @@ func TestMemoryRestartRuleStore_matchesNameOrSelector_Regex(t *testing.T) {
 		{
 			name: "regex pattern no match",
 			change: karov1alpha1.ChangeSpec{
-				Kind: "ConfigMap",
-				Name: ".*apache.*-config",
+				Kind:    "ConfigMap",
+				Name:    ".*apache.*-config",
+				IsRegex: true,
 			},
 			meta: metav1.ObjectMeta{
 				Name: "nginx-app-config",
@@ -809,8 +812,9 @@ func TestMemoryRestartRuleStore_matchesNameOrSelector_Regex(t *testing.T) {
 		{
 			name: "regex pattern with character classes",
 			change: karov1alpha1.ChangeSpec{
-				Kind: "Secret",
-				Name: "app-[0-9]+-secret",
+				Kind:    "Secret",
+				Name:    "app-[0-9]+-secret",
+				IsRegex: true,
 			},
 			meta: metav1.ObjectMeta{
 				Name: "app-123-secret",
@@ -820,8 +824,9 @@ func TestMemoryRestartRuleStore_matchesNameOrSelector_Regex(t *testing.T) {
 		{
 			name: "regex pattern with character classes no match",
 			change: karov1alpha1.ChangeSpec{
-				Kind: "Secret",
-				Name: "app-[0-9]+-secret",
+				Kind:    "Secret",
+				Name:    "app-[0-9]+-secret",
+				IsRegex: true,
 			},
 			meta: metav1.ObjectMeta{
 				Name: "app-abc-secret",
@@ -864,8 +869,9 @@ func TestMemoryRestartRuleStore_matchesNameOrSelector_Regex(t *testing.T) {
 		{
 			name: "regex with OR operator",
 			change: karov1alpha1.ChangeSpec{
-				Kind: "ConfigMap",
-				Name: "(nginx|apache)-config",
+				Kind:    "ConfigMap",
+				Name:    "(nginx|apache)-config",
+				IsRegex: true,
 			},
 			meta: metav1.ObjectMeta{
 				Name: "apache-config",
@@ -910,8 +916,9 @@ func TestMemoryRestartRuleStore_GetForSecret_Regex(t *testing.T) {
 					Spec: karov1alpha1.RestartRuleSpec{
 						Changes: []karov1alpha1.ChangeSpec{
 							{
-								Kind: "Secret",
-								Name: ".*nginx.*-secret",
+								Kind:    "Secret",
+								Name:    ".*nginx.*-secret",
+								IsRegex: true,
 							},
 						},
 					},
@@ -937,8 +944,9 @@ func TestMemoryRestartRuleStore_GetForSecret_Regex(t *testing.T) {
 					Spec: karov1alpha1.RestartRuleSpec{
 						Changes: []karov1alpha1.ChangeSpec{
 							{
-								Kind: "Secret",
-								Name: "^nginx.*-secret$",
+								Kind:    "Secret",
+								Name:    "^nginx.*-secret$",
+								IsRegex: true,
 							},
 						},
 					},
@@ -993,8 +1001,9 @@ func TestMemoryRestartRuleStore_GetForConfigMap_Regex(t *testing.T) {
 					Spec: karov1alpha1.RestartRuleSpec{
 						Changes: []karov1alpha1.ChangeSpec{
 							{
-								Kind: "ConfigMap",
-								Name: ".*nginx.*-config",
+								Kind:    "ConfigMap",
+								Name:    ".*nginx.*-config",
+								IsRegex: true,
 							},
 						},
 					},
@@ -1020,8 +1029,9 @@ func TestMemoryRestartRuleStore_GetForConfigMap_Regex(t *testing.T) {
 					Spec: karov1alpha1.RestartRuleSpec{
 						Changes: []karov1alpha1.ChangeSpec{
 							{
-								Kind: "ConfigMap",
-								Name: "app-[0-9]+-config",
+								Kind:    "ConfigMap",
+								Name:    "app-[0-9]+-config",
+								IsRegex: true,
 							},
 						},
 					},
@@ -1034,8 +1044,9 @@ func TestMemoryRestartRuleStore_GetForConfigMap_Regex(t *testing.T) {
 					Spec: karov1alpha1.RestartRuleSpec{
 						Changes: []karov1alpha1.ChangeSpec{
 							{
-								Kind: "ConfigMap",
-								Name: "app-.*-config",
+								Kind:    "ConfigMap",
+								Name:    "app-.*-config",
+								IsRegex: true,
 							},
 						},
 					},
@@ -1059,6 +1070,123 @@ func TestMemoryRestartRuleStore_GetForConfigMap_Regex(t *testing.T) {
 			result := store.GetForConfigMap(ctx, tt.configMap, tt.operation)
 			if len(result) != tt.expected {
 				t.Errorf("GetForConfigMap() returned %d rules, want %d", len(result), tt.expected)
+			}
+		})
+	}
+}
+
+func TestMemoryRestartRuleStore_matchesNameOrSelector_IsRegexFlag(t *testing.T) {
+	store := NewMemoryRestartRuleStore()
+
+	tests := []struct {
+		name     string
+		change   karov1alpha1.ChangeSpec
+		meta     metav1.ObjectMeta
+		expected bool
+	}{
+		{
+			name: "literal match with IsRegex=false (default)",
+			change: karov1alpha1.ChangeSpec{
+				Kind:    "ConfigMap",
+				Name:    "my-app[v1]",
+				IsRegex: false,
+			},
+			meta: metav1.ObjectMeta{
+				Name: "my-app[v1]",
+			},
+			expected: true,
+		},
+		{
+			name: "literal no match with IsRegex=false",
+			change: karov1alpha1.ChangeSpec{
+				Kind:    "ConfigMap",
+				Name:    "my-app[v1]",
+				IsRegex: false,
+			},
+			meta: metav1.ObjectMeta{
+				Name: "my-app-v1",
+			},
+			expected: false,
+		},
+		{
+			name: "regex match with IsRegex=true",
+			change: karov1alpha1.ChangeSpec{
+				Kind:    "ConfigMap",
+				Name:    "my-app\\[v[0-9]+\\]",
+				IsRegex: true,
+			},
+			meta: metav1.ObjectMeta{
+				Name: "my-app[v1]",
+			},
+			expected: true,
+		},
+		{
+			name: "regex no match with IsRegex=true",
+			change: karov1alpha1.ChangeSpec{
+				Kind:    "ConfigMap",
+				Name:    "my-app\\[v[0-9]+\\]",
+				IsRegex: true,
+			},
+			meta: metav1.ObjectMeta{
+				Name: "my-app[va]",
+			},
+			expected: false,
+		},
+		{
+			name: "invalid regex with IsRegex=true returns false",
+			change: karov1alpha1.ChangeSpec{
+				Kind:    "ConfigMap",
+				Name:    "[invalid-regex",
+				IsRegex: true,
+			},
+			meta: metav1.ObjectMeta{
+				Name: "any-name",
+			},
+			expected: false,
+		},
+		{
+			name: "special regex characters treated literally when IsRegex=false",
+			change: karov1alpha1.ChangeSpec{
+				Kind:    "Secret",
+				Name:    "app.config",
+				IsRegex: false,
+			},
+			meta: metav1.ObjectMeta{
+				Name: "app.config",
+			},
+			expected: true,
+		},
+		{
+			name: "special regex characters not treated literally when IsRegex=false",
+			change: karov1alpha1.ChangeSpec{
+				Kind:    "Secret",
+				Name:    "app.config",
+				IsRegex: false,
+			},
+			meta: metav1.ObjectMeta{
+				Name: "appXconfig", // . should not match any character
+			},
+			expected: false,
+		},
+		{
+			name: "dot matches any character when IsRegex=true",
+			change: karov1alpha1.ChangeSpec{
+				Kind:    "Secret",
+				Name:    "app.config",
+				IsRegex: true,
+			},
+			meta: metav1.ObjectMeta{
+				Name: "appXconfig",
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := store.matchesNameOrSelector(tt.change, tt.meta)
+			if result != tt.expected {
+				t.Errorf("matchesNameOrSelector() = %v, expected %v", result, tt.expected)
 			}
 		})
 	}

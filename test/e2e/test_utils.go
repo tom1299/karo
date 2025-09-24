@@ -24,6 +24,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -444,6 +445,7 @@ func createRegexConfigMapRestartRule(namespace string) *karov1alpha1.RestartRule
 				{
 					Kind:       "ConfigMap",
 					Name:       ".*nginx.*-config",
+					IsRegex:    true,
 					ChangeType: []string{"Update"},
 				},
 			},
@@ -468,6 +470,7 @@ func createRegexSecretRestartRule(namespace string) *karov1alpha1.RestartRule {
 				{
 					Kind:       "Secret",
 					Name:       ".*nginx.*-secret",
+					IsRegex:    true,
 					ChangeType: []string{"Update"},
 				},
 			},
@@ -479,4 +482,46 @@ func createRegexSecretRestartRule(namespace string) *karov1alpha1.RestartRule {
 			},
 		},
 	}
+}
+
+// waitForRestartRuleReady waits for a RestartRule to be in Active phase with Ready condition true
+func waitForRestartRuleReady(ctx context.Context, k8sClient client.Client, namespace, name string) error {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		rule := &karov1alpha1.RestartRule{}
+		if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, rule); err != nil {
+			return false, err
+		}
+
+		// Check if the rule is in Active phase
+		if rule.Status.Phase != "Active" {
+			return false, nil
+		}
+
+		// Check if Ready condition is true
+		readyCondition := meta.FindStatusCondition(rule.Status.Conditions, "Ready")
+		if readyCondition == nil || readyCondition.Status != metav1.ConditionTrue {
+			return false, nil
+		}
+
+		return true, nil
+	})
+}
+
+// waitForRestartEvent waits for a restart event to appear in the RestartRule status
+func waitForRestartEvent(ctx context.Context, k8sClient client.Client, namespace, ruleName, targetName string) error {
+	return wait.PollUntilContextTimeout(ctx, interval, timeout, true, func(ctx context.Context) (bool, error) {
+		rule := &karov1alpha1.RestartRule{}
+		if err := k8sClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: ruleName}, rule); err != nil {
+			return false, err
+		}
+
+		// Check if there's at least one restart event for the target
+		for _, event := range rule.Status.RestartHistory {
+			if event.Target.Name == targetName && event.Status == "Success" {
+				return true, nil
+			}
+		}
+
+		return false, nil
+	})
 }

@@ -23,6 +23,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
@@ -96,7 +97,16 @@ func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules [
 						"resourceType", resourceType,
 						"restartRule", rule.Name)
 
+					// Record failed restart in status
+					if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Failed", err.Error()); statusErr != nil {
+						logger.Error(statusErr, "Failed to record restart event")
+					}
 					continue
+				}
+
+				// Record successful restart in status
+				if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Success", ""); statusErr != nil {
+					logger.Error(statusErr, "Failed to record restart event")
 				}
 
 				// Log the restart of the deployment
@@ -111,6 +121,49 @@ func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules [
 	}
 
 	return nil
+}
+
+// recordRestartEvent records a restart event in the RestartRule status
+func (r *BaseReconciler) recordRestartEvent(ctx context.Context, rule *karov1alpha1.RestartRule, target karov1alpha1.TargetSpec, resourceName, resourceType, status, message string) error {
+	// Fetch latest rule to avoid conflicts
+	var currentRule karov1alpha1.RestartRule
+	if err := r.Get(ctx, client.ObjectKeyFromObject(rule), &currentRule); err != nil {
+		return fmt.Errorf("failed to get current RestartRule: %w", err)
+	}
+
+	targetNamespace := target.Namespace
+	if targetNamespace == "" {
+		targetNamespace = rule.Namespace
+	}
+
+	// Create restart event
+	event := karov1alpha1.RestartEvent{
+		Timestamp: metav1.Now(),
+		Target: karov1alpha1.WorkloadReference{
+			Kind:      target.Kind,
+			Name:      target.Name,
+			Namespace: targetNamespace,
+		},
+		TriggerResource: karov1alpha1.ResourceReference{
+			Kind:      resourceType,
+			Name:      resourceName,
+			Namespace: rule.Namespace,
+		},
+		Status:  status,
+		Message: message,
+	}
+
+	// Add to history (keep last 10 events)
+	currentRule.Status.RestartHistory = append(currentRule.Status.RestartHistory, event)
+	if len(currentRule.Status.RestartHistory) > 10 {
+		currentRule.Status.RestartHistory = currentRule.Status.RestartHistory[len(currentRule.Status.RestartHistory)-10:]
+	}
+
+	// Update timestamp
+	currentRule.Status.LastProcessedAt = &metav1.Time{Time: time.Now()}
+
+	// Update status
+	return r.Status().Update(ctx, &currentRule)
 }
 
 // CreateEventFilter creates the common event filter predicate

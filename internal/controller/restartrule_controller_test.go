@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
@@ -161,15 +162,14 @@ func TestRestartRuleReconciler_validateRule(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Errorf("validateRule() expected error but got none")
+
 					return
 				}
 				if tt.errMsg != "" && !contains(err.Error(), tt.errMsg) {
 					t.Errorf("validateRule() error message %q does not contain %q", err.Error(), tt.errMsg)
 				}
-			} else {
-				if err != nil {
-					t.Errorf("validateRule() unexpected error: %v", err)
-				}
+			} else if err != nil {
+				t.Errorf("validateRule() unexpected error: %v", err)
 			}
 		})
 	}
@@ -177,8 +177,12 @@ func TestRestartRuleReconciler_validateRule(t *testing.T) {
 
 func TestRestartRuleReconciler_Reconcile(t *testing.T) {
 	scheme := runtime.NewScheme()
-	clientgoscheme.AddToScheme(scheme)
-	karov1alpha1.AddToScheme(scheme)
+	if err := clientgoscheme.AddToScheme(scheme); err != nil {
+		t.Fatalf("Failed to add clientgo scheme: %v", err)
+	}
+	if err := karov1alpha1.AddToScheme(scheme); err != nil {
+		t.Fatalf("Failed to add karo scheme: %v", err)
+	}
 
 	ctx := context.Background()
 
@@ -249,89 +253,122 @@ func TestRestartRuleReconciler_Reconcile(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create fake client with the rule
-			fakeClient := fake.NewClientBuilder().
-				WithScheme(scheme).
-				WithObjects(tt.rule).
-				WithStatusSubresource(tt.rule).
-				Build()
+			reconciler, memStore := createTestReconciler(scheme, tt.rule)
+			req := createReconcileRequest(tt.rule)
 
-			// Create memory store
-			memStore := store.NewMemoryRestartRuleStore()
+			// Run reconcile and validate error expectations
+			runReconcileAndValidateError(t, reconciler, ctx, req, tt.wantPhase)
 
-			// Create reconciler
-			r := &RestartRuleReconciler{
-				Client:           fakeClient,
-				Scheme:           scheme,
-				RestartRuleStore: memStore,
-			}
+			// Get and validate updated rule status
+			getAndValidateUpdatedRule(t, reconciler.Client, ctx, req, tt)
 
-			// Run reconcile
-			req := ctrl.Request{
-				NamespacedName: types.NamespacedName{
-					Name:      tt.rule.Name,
-					Namespace: tt.rule.Namespace,
-				},
-			}
-			_, err := r.Reconcile(ctx, req)
-
-			// For invalid rules, we expect an error to be returned
-			if tt.wantPhase == "Invalid" {
-				if err == nil {
-					t.Error("Reconcile() expected error for invalid rule but got none")
-				}
-			} else {
-				if err != nil {
-					t.Errorf("Reconcile() unexpected error: %v", err)
-				}
-			}
-
-			// Get updated rule
-			var updatedRule karov1alpha1.RestartRule
-			if err := fakeClient.Get(ctx, req.NamespacedName, &updatedRule); err != nil {
-				t.Fatalf("Failed to get updated rule: %v", err)
-			}
-
-			// Check phase
-			if updatedRule.Status.Phase != tt.wantPhase {
-				t.Errorf("Expected phase %q, got %q", tt.wantPhase, updatedRule.Status.Phase)
-			}
-
-			// Check conditions
-			readyCondition := meta.FindStatusCondition(updatedRule.Status.Conditions, "Ready")
-			if readyCondition == nil {
-				t.Error("Ready condition not found")
-			} else if readyCondition.Status != tt.wantReady {
-				t.Errorf("Expected Ready condition %q, got %q", tt.wantReady, readyCondition.Status)
-			}
-
-			validCondition := meta.FindStatusCondition(updatedRule.Status.Conditions, "Valid")
-			if validCondition == nil {
-				t.Error("Valid condition not found")
-			} else if validCondition.Status != tt.wantValid {
-				t.Errorf("Expected Valid condition %q, got %q", tt.wantValid, validCondition.Status)
-			}
-
-			// Check if rule is in store
-			rules := memStore.GetForConfigMap(ctx, corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "my-config",
-					Namespace: "default",
-				},
-			}, store.OperationUpdate)
-
-			foundInStore := false
-			for _, rule := range rules {
-				if rule.Name == tt.rule.Name && rule.Namespace == tt.rule.Namespace {
-					foundInStore = true
-					break
-				}
-			}
-
-			if foundInStore != tt.expectInStore {
-				t.Errorf("Expected rule in store: %v, but found: %v", tt.expectInStore, foundInStore)
-			}
+			// Validate rule is in store as expected
+			validateRuleInStore(t, memStore, ctx, tt)
 		})
+	}
+}
+
+func createTestReconciler(scheme *runtime.Scheme, rule *karov1alpha1.RestartRule) (*RestartRuleReconciler, *store.MemoryRestartRuleStore) {
+	// Create fake client with the rule
+	fakeClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(rule).
+		WithStatusSubresource(rule).
+		Build()
+
+	// Create memory store
+	memStore := store.NewMemoryRestartRuleStore()
+
+	// Create reconciler
+	return &RestartRuleReconciler{
+		Client:           fakeClient,
+		Scheme:           scheme,
+		RestartRuleStore: memStore,
+	}, memStore
+}
+
+func createReconcileRequest(rule *karov1alpha1.RestartRule) ctrl.Request {
+	return ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      rule.Name,
+			Namespace: rule.Namespace,
+		},
+	}
+}
+
+func runReconcileAndValidateError(t *testing.T, reconciler *RestartRuleReconciler, ctx context.Context, req ctrl.Request, wantPhase string) {
+	_, err := reconciler.Reconcile(ctx, req)
+
+	// For invalid rules, we expect an error to be returned
+	if wantPhase == "Invalid" {
+		if err == nil {
+			t.Error("Reconcile() expected error for invalid rule but got none")
+		}
+	} else if err != nil {
+		t.Errorf("Reconcile() unexpected error: %v", err)
+	}
+}
+
+func getAndValidateUpdatedRule(t *testing.T, c client.Client, ctx context.Context, req ctrl.Request, tt struct {
+	name          string
+	rule          *karov1alpha1.RestartRule
+	wantPhase     string
+	wantReady     metav1.ConditionStatus
+	wantValid     metav1.ConditionStatus
+	expectInStore bool
+}) {
+	// Get updated rule
+	var updatedRule karov1alpha1.RestartRule
+	if err := c.Get(ctx, req.NamespacedName, &updatedRule); err != nil {
+		t.Fatalf("Failed to get updated rule: %v", err)
+	}
+
+	// Check phase
+	if updatedRule.Status.Phase != tt.wantPhase {
+		t.Errorf("Expected phase %q, got %q", tt.wantPhase, updatedRule.Status.Phase)
+	}
+
+	// Check conditions
+	validateStatusCondition(t, updatedRule.Status.Conditions, "Ready", tt.wantReady)
+	validateStatusCondition(t, updatedRule.Status.Conditions, "Valid", tt.wantValid)
+}
+
+func validateStatusCondition(t *testing.T, conditions []metav1.Condition, conditionType string, expectedStatus metav1.ConditionStatus) {
+	condition := meta.FindStatusCondition(conditions, conditionType)
+	if condition == nil {
+		t.Errorf("%s condition not found", conditionType)
+	} else if condition.Status != expectedStatus {
+		t.Errorf("Expected %s condition %q, got %q", conditionType, expectedStatus, condition.Status)
+	}
+}
+
+func validateRuleInStore(t *testing.T, memStore store.RestartRuleStore, ctx context.Context, tt struct {
+	name          string
+	rule          *karov1alpha1.RestartRule
+	wantPhase     string
+	wantReady     metav1.ConditionStatus
+	wantValid     metav1.ConditionStatus
+	expectInStore bool
+}) {
+	// Check if rule is in store
+	rules := memStore.GetForConfigMap(ctx, corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-config",
+			Namespace: "default",
+		},
+	}, store.OperationUpdate)
+
+	foundInStore := false
+	for _, rule := range rules {
+		if rule.Name == tt.rule.Name && rule.Namespace == tt.rule.Namespace {
+			foundInStore = true
+
+			break
+		}
+	}
+
+	if foundInStore != tt.expectInStore {
+		t.Errorf("Expected rule in store: %v, but found: %v", tt.expectInStore, foundInStore)
 	}
 }
 

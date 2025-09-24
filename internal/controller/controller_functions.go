@@ -101,6 +101,7 @@ func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules [
 					if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Failed", err.Error()); statusErr != nil {
 						logger.Error(statusErr, "Failed to record restart event")
 					}
+
 					continue
 				}
 
@@ -123,49 +124,6 @@ func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules [
 	return nil
 }
 
-// recordRestartEvent records a restart event in the RestartRule status
-func (r *BaseReconciler) recordRestartEvent(ctx context.Context, rule *karov1alpha1.RestartRule, target karov1alpha1.TargetSpec, resourceName, resourceType, status, message string) error {
-	// Fetch latest rule to avoid conflicts
-	var currentRule karov1alpha1.RestartRule
-	if err := r.Get(ctx, client.ObjectKeyFromObject(rule), &currentRule); err != nil {
-		return fmt.Errorf("failed to get current RestartRule: %w", err)
-	}
-
-	targetNamespace := target.Namespace
-	if targetNamespace == "" {
-		targetNamespace = rule.Namespace
-	}
-
-	// Create restart event
-	event := karov1alpha1.RestartEvent{
-		Timestamp: metav1.Now(),
-		Target: karov1alpha1.WorkloadReference{
-			Kind:      target.Kind,
-			Name:      target.Name,
-			Namespace: targetNamespace,
-		},
-		TriggerResource: karov1alpha1.ResourceReference{
-			Kind:      resourceType,
-			Name:      resourceName,
-			Namespace: rule.Namespace,
-		},
-		Status:  status,
-		Message: message,
-	}
-
-	// Add to history (keep last 10 events)
-	currentRule.Status.RestartHistory = append(currentRule.Status.RestartHistory, event)
-	if len(currentRule.Status.RestartHistory) > 10 {
-		currentRule.Status.RestartHistory = currentRule.Status.RestartHistory[len(currentRule.Status.RestartHistory)-10:]
-	}
-
-	// Update timestamp
-	currentRule.Status.LastProcessedAt = &metav1.Time{Time: time.Now()}
-
-	// Update status
-	return r.Status().Update(ctx, &currentRule)
-}
-
 // CreateEventFilter creates the common event filter predicate
 func (r *BaseReconciler) CreateEventFilter() predicate.Funcs {
 	return predicate.Funcs{
@@ -185,6 +143,49 @@ func (r *BaseReconciler) CreateEventFilter() predicate.Funcs {
 			return true
 		},
 	}
+}
+
+// recordRestartEvent records a restart event in the RestartRule status
+func (r *BaseReconciler) recordRestartEvent(ctx context.Context, rule *karov1alpha1.RestartRule, target karov1alpha1.TargetSpec, resourceName, resourceType, status, message string) error {
+	// Fetch latest rule to avoid conflicts
+	var currentRule karov1alpha1.RestartRule
+	if err := r.Get(ctx, client.ObjectKeyFromObject(rule), &currentRule); err != nil {
+		return fmt.Errorf("failed to get current RestartRule: %w", err)
+	}
+
+	targetNamespace := target.Namespace
+	if targetNamespace == "" {
+		targetNamespace = rule.Namespace
+	}
+
+	// Create restart event
+	restartEvent := karov1alpha1.RestartEvent{
+		Timestamp: metav1.Now(),
+		Target: karov1alpha1.WorkloadReference{
+			Kind:      target.Kind,
+			Name:      target.Name,
+			Namespace: targetNamespace,
+		},
+		TriggerResource: karov1alpha1.ResourceReference{
+			Kind:      resourceType,
+			Name:      resourceName,
+			Namespace: rule.Namespace,
+		},
+		Status:  status,
+		Message: message,
+	}
+
+	// Add to history (keep last 10 events)
+	currentRule.Status.RestartHistory = append(currentRule.Status.RestartHistory, restartEvent)
+	if len(currentRule.Status.RestartHistory) > 10 {
+		currentRule.Status.RestartHistory = currentRule.Status.RestartHistory[len(currentRule.Status.RestartHistory)-10:]
+	}
+
+	// Update timestamp
+	currentRule.Status.LastProcessedAt = &metav1.Time{Time: time.Now()}
+
+	// Update status
+	return r.Status().Update(ctx, &currentRule)
 }
 
 // ResourceInfo contains information about a Kubernetes resource

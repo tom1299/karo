@@ -159,7 +159,8 @@ func testSecretRestart(ctx context.Context, t *testing.T, clients *testClients, 
 
 	// Also check that restart event was recorded in the RestartRule status
 	t.Log("Checking that restart event was recorded in Secret RestartRule status...")
-	if err := waitForRestartEvent(ctx, clients.k8sClient, testNamespace, "nginx-secret-restart-rule", deploymentName); err != nil {
+	if err := waitForRestartEvent(ctx, clients.k8sClient, testNamespace,
+		"nginx-secret-restart-rule", deploymentName); err != nil {
 		t.Fatalf("Restart event was not recorded in Secret RestartRule status: %v", err)
 	}
 
@@ -278,6 +279,12 @@ func setupTestEnvironmentForRegex(ctx context.Context, t *testing.T, clients *te
 		t.Fatalf("Failed to create namespace: %v", err)
 	}
 
+	setupRegexTestConfigMaps(ctx, t, clients)
+	setupRegexTestSecrets(ctx, t, clients)
+	setupRegexTestDeployments(ctx, t, clients)
+}
+
+func setupRegexTestConfigMaps(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("Creating multiple ConfigMaps with different names...")
 	configMaps := []*corev1.ConfigMap{
 		createRegexTestConfigMap(regexTestNamespace, "frontend-nginx-app-config"),
@@ -290,7 +297,9 @@ func setupTestEnvironmentForRegex(ctx context.Context, t *testing.T, clients *te
 			t.Fatalf("Failed to create ConfigMap %s: %v", cm.Name, err)
 		}
 	}
+}
 
+func setupRegexTestSecrets(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("Creating multiple Secrets with different names...")
 	secrets := []*corev1.Secret{
 		createRegexTestSecret(regexTestNamespace, "nginx-prod-secret"),
@@ -303,7 +312,9 @@ func setupTestEnvironmentForRegex(ctx context.Context, t *testing.T, clients *te
 			t.Fatalf("Failed to create Secret %s: %v", secret.Name, err)
 		}
 	}
+}
 
+func setupRegexTestDeployments(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("Creating test deployments...")
 	deployments := []*appsv1.Deployment{
 		createRegexTestDeployment(regexTestNamespace, "nginx-frontend"),
@@ -331,7 +342,8 @@ func testRegexConfigMapRestart(ctx context.Context, t *testing.T, clients *testC
 	}
 
 	t.Log("Waiting for ConfigMap regex RestartRule to become Active...")
-	if err := waitForRestartRuleReady(ctx, clients.k8sClient, regexTestNamespace, "nginx-configmap-regex-rule"); err != nil {
+	if err := waitForRestartRuleReady(ctx, clients.k8sClient, regexTestNamespace,
+		"nginx-configmap-regex-rule"); err != nil {
 		t.Fatalf("ConfigMap regex RestartRule did not become ready: %v", err)
 	}
 
@@ -345,7 +357,8 @@ func testRegexConfigMapRestart(ctx context.Context, t *testing.T, clients *testC
 
 	// Also check that restart event was recorded in the RestartRule status
 	t.Log("Checking that restart event was recorded in regex ConfigMap RestartRule status...")
-	if err := waitForRestartEvent(ctx, clients.k8sClient, regexTestNamespace, "nginx-configmap-regex-rule", "nginx-frontend"); err != nil {
+	if err := waitForRestartEvent(ctx, clients.k8sClient, regexTestNamespace,
+		"nginx-configmap-regex-rule", "nginx-frontend"); err != nil {
 		t.Fatalf("Restart event was not recorded in regex ConfigMap RestartRule status: %v", err)
 	}
 
@@ -375,7 +388,8 @@ func testRegexSecretRestart(ctx context.Context, t *testing.T, clients *testClie
 
 	// Also check that restart event was recorded in the RestartRule status
 	t.Log("Checking that restart event was recorded in regex Secret RestartRule status...")
-	if err := waitForRestartEvent(ctx, clients.k8sClient, regexTestNamespace, "nginx-secret-regex-rule", "nginx-frontend"); err != nil {
+	if err := waitForRestartEvent(ctx, clients.k8sClient, regexTestNamespace,
+		"nginx-secret-regex-rule", "nginx-frontend"); err != nil {
 		t.Fatalf("Restart event was not recorded in regex Secret RestartRule status: %v", err)
 	}
 

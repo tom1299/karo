@@ -1,6 +1,5 @@
 # Karo - Kubernetes Restart Operator
 
-[![Tests](https://github.com/tom1299/karo/actions/workflows/test.yml/badge.svg)](https://github.com/tom1299/karo/actions/workflows/test.yml)
 [![codecov](https://codecov.io/gh/tom1299/karo/branch/main/graph/badge.svg)](https://codecov.io/gh/tom1299/karo)
 [![Go Report Card](https://goreportcard.com/badge/github.com/tom1299/karo)](https://goreportcard.com/report/github.com/tom1299/karo)
 

@@ -21,16 +21,14 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"time"
 
-	"k8s.io/apimachinery/pkg/api/meta"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
-	"karo.jeeatwork.com/internal/store"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+
+	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
+	"karo.jeeatwork.com/internal/store"
 )
 
 var (
@@ -67,12 +65,22 @@ func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Set initial phase if not set
 	if rule.Status.Phase == "" {
-		rule.Status.Phase = "Pending"
+		if err := r.updateStatus(ctx, &rule, "Pending", "RulePending", "RestartRule is pending"); err != nil {
+			log.Error(err, "Failed to update status to Pending")
+
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Validate rule configuration
 	if err := r.validateRule(&rule); err != nil {
-		return r.updateStatusWithError(ctx, &rule, err)
+		if err := r.updateStatus(ctx, &rule, "Invalid", "ValidationFailed", err.Error()); err != nil {
+			log.Error(err, "Failed to update status to Invalid")
+
+			return ctrl.Result{}, err
+		}
+
+		return ctrl.Result{}, err
 	}
 
 	// Add to store (separate from validation)
@@ -80,7 +88,13 @@ func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	log.V(1).Info("RestartRule added/updated in store", "name", req.Name, "namespace", req.Namespace)
 
 	// Update status to Active
-	return r.updateStatusActive(ctx, &rule)
+	if err := r.updateStatus(ctx, &rule, "Active", "RuleActive", "RestartRule is active and monitoring for changes"); err != nil {
+		log.Error(err, "Failed to update status to Active")
+
+		return ctrl.Result{}, err
+	}
+
+	return ctrl.Result{}, nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
@@ -116,56 +130,4 @@ func (r *RestartRuleReconciler) validateRule(rule *karov1alpha1.RestartRule) err
 	}
 
 	return nil
-}
-
-// updateStatusActive updates the status to Active phase
-func (r *RestartRuleReconciler) updateStatusActive(ctx context.Context, rule *karov1alpha1.RestartRule) (ctrl.Result, error) {
-	rule.Status.Phase = "Active"
-	rule.Status.LastProcessedAt = &metav1.Time{Time: time.Now()}
-
-	// Update Ready condition
-	meta.SetStatusCondition(&rule.Status.Conditions, metav1.Condition{
-		Type:    "Ready",
-		Status:  metav1.ConditionTrue,
-		Reason:  "RuleActive",
-		Message: "RestartRule is active and monitoring for changes",
-	})
-
-	// Update Valid condition
-	meta.SetStatusCondition(&rule.Status.Conditions, metav1.Condition{
-		Type:    "Valid",
-		Status:  metav1.ConditionTrue,
-		Reason:  "ValidationPassed",
-		Message: "RestartRule configuration is valid",
-	})
-
-	return ctrl.Result{}, r.Status().Update(ctx, rule)
-}
-
-// updateStatusWithError updates the status when validation fails
-func (r *RestartRuleReconciler) updateStatusWithError(ctx context.Context, rule *karov1alpha1.RestartRule, validationErr error) (ctrl.Result, error) {
-	rule.Status.Phase = "Invalid"
-	rule.Status.LastProcessedAt = &metav1.Time{Time: time.Now()}
-
-	// Update Ready condition
-	meta.SetStatusCondition(&rule.Status.Conditions, metav1.Condition{
-		Type:    "Ready",
-		Status:  metav1.ConditionFalse,
-		Reason:  "ValidationFailed",
-		Message: "RestartRule validation failed",
-	})
-
-	// Update Valid condition
-	meta.SetStatusCondition(&rule.Status.Conditions, metav1.Condition{
-		Type:    "Valid",
-		Status:  metav1.ConditionFalse,
-		Reason:  "ValidationFailed",
-		Message: validationErr.Error(),
-	})
-
-	if err := r.Status().Update(ctx, rule); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
-	}
-
-	return ctrl.Result{}, validationErr
 }

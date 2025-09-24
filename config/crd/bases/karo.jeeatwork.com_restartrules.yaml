@@ -52,6 +52,11 @@ spec:
                       items:
                         type: string
                       type: array
+                    isRegex:
+                      description: |-
+                        IsRegex indicates if Name should be treated as a regular expression pattern
+                        If false (default), Name is treated as a literal string match
+                      type: boolean
                     kind:
                       description: Kind specifies the kind of resource to watch for
                         changes
@@ -61,7 +66,6 @@ spec:
                       type: string
                     name:
                       description: Name specifies the name of the resource to watch
-                        (supports regex patterns)
                       type: string
                     selector:
                       description: Selector allows watching resources by label selector
@@ -267,6 +271,83 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              lastProcessedAt:
+                description: LastProcessedAt indicates when the rule was last evaluated
+                format: date-time
+                type: string
+              phase:
+                description: Phase represents the current phase of the RestartRule
+                  lifecycle
+                enum:
+                - Pending
+                - Active
+                - Invalid
+                - Failed
+                type: string
+              restartHistory:
+                description: RestartHistory tracks recent restart actions triggered
+                  by this rule
+                items:
+                  description: RestartEvent records a restart action triggered by
+                    a RestartRule
+                  properties:
+                    message:
+                      description: Message provides additional details about the restart
+                      type: string
+                    status:
+                      description: Status indicates whether the restart was successful
+                      enum:
+                      - Success
+                      - Failed
+                      type: string
+                    target:
+                      description: Target identifies the workload that was restarted
+                      properties:
+                        kind:
+                          description: Kind of the workload (Deployment, StatefulSet,
+                            etc.)
+                          type: string
+                        name:
+                          description: Name of the workload
+                          type: string
+                        namespace:
+                          description: Namespace of the workload
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      - namespace
+                      type: object
+                    timestamp:
+                      description: Timestamp when the restart was triggered
+                      format: date-time
+                      type: string
+                    triggerResource:
+                      description: TriggerResource identifies the resource change
+                        that triggered the restart
+                      properties:
+                        kind:
+                          description: Kind of the resource (ConfigMap, Secret, etc.)
+                          type: string
+                        name:
+                          description: Name of the resource
+                          type: string
+                        namespace:
+                          description: Namespace of the resource
+                          type: string
+                      required:
+                      - kind
+                      - name
+                      - namespace
+                      type: object
+                  required:
+                  - status
+                  - target
+                  - timestamp
+                  - triggerResource
+                  type: object
+                type: array
+                x-kubernetes-list-type: atomic
             type: object
         required:
         - spec

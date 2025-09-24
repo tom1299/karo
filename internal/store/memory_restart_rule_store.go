@@ -94,14 +94,18 @@ func (s *MemoryRestartRuleStore) changeMatchesResource(change karov1alpha1.Chang
 
 func (s *MemoryRestartRuleStore) matchesNameOrSelector(change karov1alpha1.ChangeSpec, meta v1.ObjectMeta) bool {
 	if change.Name != "" {
-		// Compile the regex pattern - if it's not a valid regex, treat it as literal string
-		regex, err := regexp.Compile(change.Name)
-		if err != nil {
-			// If regex compilation fails, fall back to exact string matching
+		if change.IsRegex {
+			// Use regex matching when IsRegex is true
+			regex, err := regexp.Compile(change.Name)
+			if err != nil {
+				// If regex compilation fails, no match
+				return false
+			}
+			return regex.MatchString(meta.Name)
+		} else {
+			// Use exact string matching when IsRegex is false (default)
 			return change.Name == meta.Name
 		}
-
-		return regex.MatchString(meta.Name)
 	}
 
 	if change.Selector != nil {

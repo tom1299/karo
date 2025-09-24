@@ -40,9 +40,14 @@ type ChangeSpec struct {
 	// +required
 	Kind string `json:"kind"`
 
-	// Name specifies the name of the resource to watch (supports regex patterns)
+	// Name specifies the name of the resource to watch
 	// +optional
 	Name string `json:"name,omitempty"`
+
+	// IsRegex indicates if Name should be treated as a regular expression pattern
+	// If false (default), Name is treated as a literal string match
+	// +optional
+	IsRegex bool `json:"isRegex,omitempty"`
 
 	// Selector allows watching resources by label selector
 	// +optional
@@ -79,11 +84,79 @@ type TargetSpec struct {
 
 // RestartRuleStatus defines the observed state of RestartRule.
 type RestartRuleStatus struct {
+	// Phase represents the current phase of the RestartRule lifecycle
+	// +kubebuilder:validation:Enum=Pending;Active;Invalid;Failed
+	// +optional
+	Phase string `json:"phase,omitempty"`
+
 	// The status of each condition is one of True, False, or Unknown.
 	// +listType=map
 	// +listMapKey=type
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+
+	// RestartHistory tracks recent restart actions triggered by this rule
+	// +optional
+	// +listType=atomic
+	RestartHistory []RestartEvent `json:"restartHistory,omitempty"`
+
+	// LastProcessedAt indicates when the rule was last evaluated
+	// +optional
+	LastProcessedAt *metav1.Time `json:"lastProcessedAt,omitempty"`
+}
+
+// RestartEvent records a restart action triggered by a RestartRule
+type RestartEvent struct {
+	// Timestamp when the restart was triggered
+	// +required
+	Timestamp metav1.Time `json:"timestamp"`
+
+	// Target identifies the workload that was restarted
+	// +required
+	Target WorkloadReference `json:"target"`
+
+	// TriggerResource identifies the resource change that triggered the restart
+	// +required
+	TriggerResource ResourceReference `json:"triggerResource"`
+
+	// Status indicates whether the restart was successful
+	// +kubebuilder:validation:Enum=Success;Failed
+	// +required
+	Status string `json:"status"`
+
+	// Message provides additional details about the restart
+	// +optional
+	Message string `json:"message,omitempty"`
+}
+
+// WorkloadReference identifies a specific workload
+type WorkloadReference struct {
+	// Kind of the workload (Deployment, StatefulSet, etc.)
+	// +required
+	Kind string `json:"kind"`
+
+	// Name of the workload
+	// +required
+	Name string `json:"name"`
+
+	// Namespace of the workload
+	// +required
+	Namespace string `json:"namespace"`
+}
+
+// ResourceReference identifies a resource that triggered a restart
+type ResourceReference struct {
+	// Kind of the resource (ConfigMap, Secret, etc.)
+	// +required
+	Kind string `json:"kind"`
+
+	// Name of the resource
+	// +required
+	Name string `json:"name"`
+
+	// Namespace of the resource
+	// +required
+	Namespace string `json:"namespace"`
 }
 
 // +kubebuilder:object:root=true

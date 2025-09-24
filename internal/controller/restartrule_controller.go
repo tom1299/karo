@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"time"
@@ -30,6 +31,11 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+)
+
+var (
+	errChangeNameAndSelector = errors.New("cannot specify both name and selector")
+	errTargetNameAndSelector = errors.New("cannot specify both name and selector")
 )
 
 // RestartRuleReconciler reconciles a RestartRule object
@@ -51,9 +57,11 @@ func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			// Object deleted, remove from store
 			r.RestartRuleStore.Remove(ctx, req.Namespace, req.Name)
 			log.V(1).Info("RestartRule deleted from store", "name", req.Name, "namespace", req.Namespace)
+
 			return ctrl.Result{}, nil
 		}
 		log.Error(err, "Failed to get RestartRule")
+
 		return ctrl.Result{}, err
 	}
 
@@ -75,13 +83,20 @@ func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	return r.updateStatusActive(ctx, &rule)
 }
 
-// validateRule validates the RestartRule configuration, especially regex patterns
+// SetupWithManager sets up the controller with the Manager.
+func (r *RestartRuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&karov1alpha1.RestartRule{}).
+		Named("restartrule").
+		Complete(r)
+}
+
 func (r *RestartRuleReconciler) validateRule(rule *karov1alpha1.RestartRule) error {
 	// Validate change specs
 	for i, change := range rule.Spec.Changes {
 		// Validate that either name or selector is specified (but not both)
 		if change.Name != "" && change.Selector != nil {
-			return fmt.Errorf("change[%d]: cannot specify both name and selector", i)
+			return fmt.Errorf("change[%d]: %w", i, errChangeNameAndSelector)
 		}
 
 		// Validate regex patterns if IsRegex is true
@@ -96,7 +111,7 @@ func (r *RestartRuleReconciler) validateRule(rule *karov1alpha1.RestartRule) err
 	for i, target := range rule.Spec.Targets {
 		// Validate that either name or selector is specified (but not both)
 		if target.Name != "" && target.Selector != nil {
-			return fmt.Errorf("target[%d]: cannot specify both name and selector", i)
+			return fmt.Errorf("target[%d]: %w", i, errTargetNameAndSelector)
 		}
 	}
 
@@ -153,12 +168,4 @@ func (r *RestartRuleReconciler) updateStatusWithError(ctx context.Context, rule 
 	}
 
 	return ctrl.Result{}, validationErr
-}
-
-// SetupWithManager sets up the controller with the Manager.
-func (r *RestartRuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&karov1alpha1.RestartRule{}).
-		Named("restartrule").
-		Complete(r)
 }

@@ -101,6 +101,7 @@ func (s *MemoryRestartRuleStore) matchesNameOrSelector(change karov1alpha1.Chang
 				// If regex compilation fails, no match
 				return false
 			}
+
 			return regex.MatchString(meta.Name)
 		} else {
 			// Use exact string matching when IsRegex is false (default)

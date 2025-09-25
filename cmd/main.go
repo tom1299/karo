@@ -20,29 +20,15 @@ import (
 	"flag"
 	"os"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
-	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
-	"karo.jeeatwork.com/internal/controller"
-	"karo.jeeatwork.com/internal/store"
+	"karo.jeeatwork.com/internal/manager"
 )
 
 var (
-	scheme           = runtime.NewScheme()
-	setupLog         = ctrl.Log.WithName("setup")
-	restartRuleStore = store.NewMemoryRestartRuleStore()
+	setupLog = ctrl.Log.WithName("setup")
 )
-
-func init() {
-	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(karov1alpha1.AddToScheme(scheme))
-}
 
 func main() {
 	opts := zap.Options{
@@ -53,58 +39,13 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
-		Scheme: scheme,
-		Metrics: metricsserver.Options{
-			BindAddress: "0", // disable metrics for the time being
-		},
-	})
+	mgr, err := manager.SetupManager(nil)
 	if err != nil {
-		setupLog.Error(err, "unable to start manager")
-		os.Exit(1)
-	}
-
-	if err := (&controller.RestartRuleReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		RestartRuleStore: restartRuleStore,
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "RestartRule")
-		os.Exit(1)
-	}
-
-	if err := (&controller.ConfigMapReconciler{
-		BaseReconciler: controller.BaseReconciler{
-			Client:           mgr.GetClient(),
-			RestartRuleStore: restartRuleStore,
-		},
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "ConfigMap")
-		os.Exit(1)
-	}
-
-	if err := (&controller.SecretReconciler{
-		BaseReconciler: controller.BaseReconciler{
-			Client:           mgr.GetClient(),
-			RestartRuleStore: restartRuleStore,
-		},
-		Scheme: mgr.GetScheme(),
-	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Secret")
+		setupLog.Error(err, "unable to setup manager")
 		os.Exit(1)
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up health check")
-		os.Exit(1)
-	}
-	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
-		setupLog.Error(err, "unable to set up ready check")
-		os.Exit(1)
-	}
-
 	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)

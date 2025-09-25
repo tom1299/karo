@@ -23,7 +23,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -38,7 +38,7 @@ func TestRestartRuleE2E(t *testing.T) {
 	clients := setupTestClients(t)
 
 	setupTestEnvironment(ctx, t, clients)
-	defer cleanup(ctx, t, clients.clientset, clients.k8sClient)
+	defer cleanup(ctx, t, clients)
 
 	configMapRestartTime := testConfigMapRestart(ctx, t, clients)
 	secretRestartTime := testSecretRestart(ctx, t, clients, configMapRestartTime)
@@ -47,8 +47,9 @@ func TestRestartRuleE2E(t *testing.T) {
 }
 
 type testClients struct {
-	clientset *kubernetes.Clientset
-	k8sClient client.Client
+	clientset         *kubernetes.Clientset
+	k8sClient         client.Client
+	controllerManager *ControllerManager
 }
 
 func setupTestClients(t *testing.T) *testClients {
@@ -69,8 +70,9 @@ func setupTestClients(t *testing.T) *testClients {
 	}
 
 	return &testClients{
-		clientset: clientset,
-		k8sClient: k8sClient,
+		clientset:         clientset,
+		k8sClient:         k8sClient,
+		controllerManager: NewControllerManager(t),
 	}
 }
 
@@ -78,6 +80,11 @@ func setupTestEnvironment(ctx context.Context, t *testing.T, clients *testClient
 	t.Log("Creating test namespace...")
 	if err := createNamespace(ctx, clients.clientset, testNamespace); err != nil {
 		t.Fatalf("Failed to create namespace: %v", err)
+	}
+
+	t.Log("Starting controller manager...")
+	if err := clients.controllerManager.Start(ctx); err != nil {
+		t.Fatalf("Failed to start controller manager: %v", err)
 	}
 
 	t.Log("Creating nginx ConfigMap...")
@@ -264,7 +271,7 @@ func TestRestartRuleRegexE2E(t *testing.T) {
 	clients := setupTestClients(t)
 
 	setupTestEnvironmentForRegex(ctx, t, clients)
-	defer cleanupRegexTest(ctx, t, clients.clientset, clients.k8sClient)
+	defer cleanupRegexTest(ctx, t, clients)
 
 	testRegexConfigMapRestart(ctx, t, clients)
 	testRegexSecretRestart(ctx, t, clients)
@@ -277,6 +284,11 @@ func setupTestEnvironmentForRegex(ctx context.Context, t *testing.T, clients *te
 	t.Log("Creating test namespace for regex tests...")
 	if err := createNamespace(ctx, clients.clientset, regexTestNamespace); err != nil {
 		t.Fatalf("Failed to create namespace: %v", err)
+	}
+
+	t.Log("Starting controller manager...")
+	if err := clients.controllerManager.Start(ctx); err != nil {
+		t.Fatalf("Failed to start controller manager: %v", err)
 	}
 
 	setupRegexTestConfigMaps(ctx, t, clients)
@@ -293,7 +305,7 @@ func setupRegexTestConfigMaps(ctx context.Context, t *testing.T, clients *testCl
 	}
 
 	for _, cm := range configMaps {
-		if err := clients.k8sClient.Create(ctx, cm); err != nil && !errors.IsAlreadyExists(err) {
+		if err := clients.k8sClient.Create(ctx, cm); err != nil && !apierrors.IsAlreadyExists(err) {
 			t.Fatalf("Failed to create ConfigMap %s: %v", cm.Name, err)
 		}
 	}
@@ -308,7 +320,7 @@ func setupRegexTestSecrets(ctx context.Context, t *testing.T, clients *testClien
 	}
 
 	for _, secret := range secrets {
-		if err := clients.k8sClient.Create(ctx, secret); err != nil && !errors.IsAlreadyExists(err) {
+		if err := clients.k8sClient.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
 			t.Fatalf("Failed to create Secret %s: %v", secret.Name, err)
 		}
 	}
@@ -322,7 +334,7 @@ func setupRegexTestDeployments(ctx context.Context, t *testing.T, clients *testC
 	}
 
 	for _, dep := range deployments {
-		if err := clients.k8sClient.Create(ctx, dep); err != nil && !errors.IsAlreadyExists(err) {
+		if err := clients.k8sClient.Create(ctx, dep); err != nil && !apierrors.IsAlreadyExists(err) {
 			t.Fatalf("Failed to create Deployment %s: %v", dep.Name, err)
 		}
 
@@ -530,8 +542,13 @@ func updateRegexSecretContent(ctx context.Context, k8sClient client.Client, name
 	return k8sClient.Update(ctx, updatedSecret)
 }
 
-func cleanupRegexTest(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset, k8sClient client.Client) {
+func cleanupRegexTest(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("Cleaning up regex test resources...")
+
+	// Stop controller manager first
+	if err := clients.controllerManager.Stop(); err != nil {
+		t.Logf("Error stopping controller manager: %v", err)
+	}
 
 	// Clean up RestartRules
 	restartRules := []*karov1alpha1.RestartRule{
@@ -541,31 +558,31 @@ func cleanupRegexTest(ctx context.Context, t *testing.T, clientset *kubernetes.C
 	}
 
 	for _, rule := range restartRules {
-		deleteResource(ctx, t, k8sClient, rule, "RestartRule")
+		deleteResource(ctx, t, clients.k8sClient, rule, "RestartRule")
 	}
 
 	// Clean up other resources (deployments, configmaps, secrets)
 	deployments := []string{"nginx-frontend", "nginx-backend"}
 	for _, name := range deployments {
-		deleteResource(ctx, t, k8sClient, &appsv1.Deployment{
+		deleteResource(ctx, t, clients.k8sClient, &appsv1.Deployment{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: regexTestNamespace}}, "Deployment")
 	}
 
 	configMaps := []string{"frontend-nginx-app-config", "backend-nginx-api-config", "apache-web-config"}
 	for _, name := range configMaps {
-		deleteResource(ctx, t, k8sClient, &corev1.ConfigMap{
+		deleteResource(ctx, t, clients.k8sClient, &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: regexTestNamespace}}, "ConfigMap")
 	}
 
 	secrets := []string{"nginx-prod-secret", "nginx-dev-secret", "apache-secret"}
 	for _, name := range secrets {
-		deleteResource(ctx, t, k8sClient, &corev1.Secret{
+		deleteResource(ctx, t, clients.k8sClient, &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: regexTestNamespace}}, "Secret")
 	}
 
 	// Clean up namespace
-	if err := clientset.CoreV1().Namespaces().Delete(
-		ctx, regexTestNamespace, metav1.DeleteOptions{}); err != nil && !errors.IsNotFound(err) {
+	if err := clients.clientset.CoreV1().Namespaces().Delete(
+		ctx, regexTestNamespace, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		t.Logf("Failed to delete regex test namespace: %v", err)
 	}
 }

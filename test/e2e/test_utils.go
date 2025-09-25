@@ -57,6 +57,12 @@ var (
 	ErrControllerAlreadyStarted = errors.New("controller manager is already started")
 )
 
+type testClients struct {
+	clientset         *kubernetes.Clientset
+	k8sClient         client.Client
+	controllerManager *ControllerManager
+}
+
 // LogCapture captures logs from controller-runtime logger
 type LogCapture struct {
 	buffer *bytes.Buffer
@@ -150,8 +156,8 @@ func (cm *ControllerManager) Start(ctx context.Context) error {
 
 	// Setup manager with skip name validation to allow multiple controllers in tests
 	opts := manager.DefaultSetupOptions()
-	// Note: We can't easily set SkipNameValidation without exposing more options
-	// For now, we'll accept that multiple tests can't run in parallel
+	opts.SkipNameValidation = true
+
 	var err error
 	cm.manager, err = manager.SetupManager(opts)
 	if err != nil {
@@ -199,7 +205,6 @@ func (cm *ControllerManager) Stop() error {
 	time.Sleep(1 * time.Second)
 
 	cm.started = false
-	cm.t.Log("Controller manager stopped")
 
 	return nil
 }
@@ -503,6 +508,32 @@ func cleanupNamespace(ctx context.Context, t *testing.T, clientset *kubernetes.C
 	if err := clientset.CoreV1().Namespaces().Delete(
 		ctx, testNamespace, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		t.Logf("Failed to delete namespace: %v", err)
+		return
+	}
+
+	// Wait for namespace to be terminated
+	t.Log("Waiting for namespace to be terminated...")
+	timeout := 30 * time.Second
+	startTime := time.Now()
+
+	for {
+		if time.Since(startTime) > timeout {
+			t.Logf("Timeout waiting for namespace %s to be terminated", testNamespace)
+			break
+		}
+
+		_, err := clientset.CoreV1().Namespaces().Get(ctx, testNamespace, metav1.GetOptions{})
+		if apierrors.IsNotFound(err) {
+			t.Log("Namespace successfully terminated")
+			break
+		}
+
+		if err != nil {
+			t.Logf("Error checking namespace status: %v", err)
+			break
+		}
+
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

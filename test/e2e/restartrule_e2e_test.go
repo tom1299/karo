@@ -46,12 +46,6 @@ func TestRestartRuleE2E(t *testing.T) {
 	validateTestResults(t, configMapRestartTime, secretRestartTime)
 }
 
-type testClients struct {
-	clientset         *kubernetes.Clientset
-	k8sClient         client.Client
-	controllerManager *ControllerManager
-}
-
 func setupTestClients(t *testing.T) *testClients {
 	cfg, err := config.GetConfig()
 	if err != nil {

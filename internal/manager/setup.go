@@ -17,6 +17,9 @@ limitations under the License.
 package manager
 
 import (
+	"sigs.k8s.io/controller-runtime/pkg/config"
+	// "sigs.k8s.io/controller-runtime/pkg/manager"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -31,8 +34,9 @@ import (
 
 // SetupOptions contains options for setting up the manager
 type SetupOptions struct {
-	MetricsAddr string
-	Scheme      *runtime.Scheme
+	MetricsAddr        string
+	Scheme             *runtime.Scheme
+	SkipNameValidation bool
 }
 
 // DefaultSetupOptions returns default setup options
@@ -42,8 +46,9 @@ func DefaultSetupOptions() *SetupOptions {
 	utilruntime.Must(karov1alpha1.AddToScheme(scheme))
 
 	return &SetupOptions{
-		MetricsAddr: "0", // disable metrics by default
-		Scheme:      scheme,
+		MetricsAddr:        "0", // disable metrics by default
+		Scheme:             scheme,
+		SkipNameValidation: false,
 	}
 }
 
@@ -59,6 +64,9 @@ func SetupManager(opts *SetupOptions) (ctrl.Manager, error) {
 		Scheme: opts.Scheme,
 		Metrics: metricsserver.Options{
 			BindAddress: opts.MetricsAddr,
+		},
+		Controller: config.Controller{
+			SkipNameValidation: &opts.SkipNameValidation,
 		},
 	})
 	if err != nil {

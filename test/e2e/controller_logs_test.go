@@ -53,6 +53,7 @@ func cleanupMinimalEnvironment(ctx context.Context, t *testing.T, clients *testC
 		t.Logf("Error stopping controller manager: %v", err)
 	}
 	cleanupNamespace(ctx, t, clients.clientset)
+
 }
 
 func testLogCapture(t *testing.T, clients *testClients) {

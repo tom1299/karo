@@ -508,6 +508,7 @@ func cleanupNamespace(ctx context.Context, t *testing.T, clientset *kubernetes.C
 	if err := clientset.CoreV1().Namespaces().Delete(
 		ctx, testNamespace, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		t.Logf("Failed to delete namespace: %v", err)
+
 		return
 	}
 
@@ -519,17 +520,20 @@ func cleanupNamespace(ctx context.Context, t *testing.T, clientset *kubernetes.C
 	for {
 		if time.Since(startTime) > timeout {
 			t.Logf("Timeout waiting for namespace %s to be terminated", testNamespace)
+
 			break
 		}
 
 		_, err := clientset.CoreV1().Namespaces().Get(ctx, testNamespace, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			t.Log("Namespace successfully terminated")
+
 			break
 		}
 
 		if err != nil {
 			t.Logf("Error checking namespace status: %v", err)
+
 			break
 		}
 

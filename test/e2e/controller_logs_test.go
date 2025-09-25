@@ -70,8 +70,8 @@ func verifyStartupLogs(t *testing.T, logs []string) {
 	foundStartupLog := false
 	for _, logLine := range logs {
 		if strings.Contains(logLine, "Starting EventSource") ||
-		   strings.Contains(logLine, "Starting Controller") ||
-		   strings.Contains(logLine, "Starting workers") {
+			strings.Contains(logLine, "Starting Controller") ||
+			strings.Contains(logLine, "Starting workers") {
 			foundStartupLog = true
 
 			break

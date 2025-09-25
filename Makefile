@@ -170,14 +170,14 @@ setup-test-e2e: ## Set up a Kind cluster for e2e tests if it does not exist
 	esac
 
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
+test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests using in-process controller management
 	@echo "Setting kubectl context to use kind cluster..."
 	@kubectl config use-context kind-$(KIND_CLUSTER)
 	@echo "Installing CRDs..."
 	@$(MAKE) install
-	@echo "Running e2e tests..."
+	@echo "Running e2e tests (controller started within test process)..."
 	@go clean -testcache
-	@if go test ./test/e2e/ -v -timeout=10m; then \
+	@if go test ./test/e2e/ -v -timeout=10m -p=1; then \
 		TEST_EXIT_CODE=0; \
 	else \
 		TEST_EXIT_CODE=$$?; \

@@ -306,7 +306,28 @@ func TestRestartRuleReconciler_Reconcile(t *testing.T) {
 		reconciler, _ := createTestReconciler(scheme, rule)
 		reconciler.Client = &fakeClientWithError{
 			Client: reconciler.Client,
-			getErr: errors.New("api error"),
+			getErr: errFakeGet,
+		}
+
+		req := createReconcileRequest(rule)
+
+		_, err := reconciler.Reconcile(context.Background(), req)
+		if err == nil {
+			t.Error("Reconcile() expected error but got none")
+		}
+	})
+
+	t.Run("update status returns error", func(t *testing.T) {
+		rule := &karov1alpha1.RestartRule{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-rule",
+				Namespace: "default",
+			},
+		}
+		reconciler, _ := createTestReconciler(scheme, rule)
+		reconciler.Client = &fakeClientWithError{
+			Client:    reconciler.Client,
+			updateErr: errFakeUpdate,
 		}
 
 		req := createReconcileRequest(rule)
@@ -430,12 +451,46 @@ func contains(s, substr string) bool {
 
 type fakeClientWithError struct {
 	client.Client
-	getErr error
+
+	getErr    error
+	updateErr error
 }
+
+var errFakeGet = errors.New("fake get error")
+var errFakeUpdate = errors.New("fake update error")
 
 func (f *fakeClientWithError) Get(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
 	if f.getErr != nil {
 		return f.getErr
 	}
+
 	return f.Client.Get(ctx, key, obj, opts...)
+}
+
+func (f *fakeClientWithError) Status() client.StatusWriter { //nolint:ireturn
+	return &fakeStatusWriter{
+		client: f.Client,
+		err:    f.updateErr,
+	}
+}
+
+type fakeStatusWriter struct {
+	client client.Client
+	err    error
+}
+
+func (sw *fakeStatusWriter) Update(ctx context.Context, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+	if sw.err != nil {
+		return sw.err
+	}
+
+	return sw.client.Status().Update(ctx, obj, opts...)
+}
+
+func (sw *fakeStatusWriter) Patch(ctx context.Context, obj client.Object, patch client.Patch, opts ...client.SubResourcePatchOption) error {
+	return sw.client.Status().Patch(ctx, obj, patch, opts...)
+}
+
+func (sw *fakeStatusWriter) Create(ctx context.Context, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
+	return sw.client.Status().Create(ctx, obj, subResource, opts...)
 }

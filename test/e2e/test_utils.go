@@ -152,7 +152,8 @@ func (cm *ControllerManager) Start(ctx context.Context) error {
 	opts := manager.DefaultSetupOptions()
 	// Note: We can't easily set SkipNameValidation without exposing more options
 	// For now, we'll accept that multiple tests can't run in parallel
-	cm.manager, err := manager.SetupManager(opts)
+	var err error
+	cm.manager, err = manager.SetupManager(opts)
 	if err != nil {
 		return fmt.Errorf("failed to setup manager: %w", err)
 	}

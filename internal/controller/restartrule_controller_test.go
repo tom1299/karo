@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -266,14 +267,63 @@ func TestRestartRuleReconciler_Reconcile(t *testing.T) {
 			validateRuleInStore(t, memStore, ctx, tt)
 		})
 	}
+
+	t.Run("rule not found", func(t *testing.T) {
+		reconciler, memStore := createTestReconciler(scheme)
+		rule := &karov1alpha1.RestartRule{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-rule",
+				Namespace: "default",
+			},
+		}
+		memStore.Add(ctx, rule)
+
+		req := createReconcileRequest(rule)
+
+		_, err := reconciler.Reconcile(ctx, req)
+		if err != nil {
+			t.Errorf("Reconcile() unexpected error for not found rule: %v", err)
+		}
+
+		rules := memStore.GetForConfigMap(ctx, corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "my-config",
+				Namespace: "default",
+			},
+		}, store.OperationUpdate)
+		if len(rules) != 0 {
+			t.Errorf("Expected store to be empty, but found %d rules", len(rules))
+		}
+	})
+
+	t.Run("get rule returns error", func(t *testing.T) {
+		rule := &karov1alpha1.RestartRule{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-rule",
+				Namespace: "default",
+			},
+		}
+		reconciler, _ := createTestReconciler(scheme, rule)
+		reconciler.Client = &fakeClientWithError{
+			Client: reconciler.Client,
+			getErr: errors.New("api error"),
+		}
+
+		req := createReconcileRequest(rule)
+
+		_, err := reconciler.Reconcile(context.Background(), req)
+		if err == nil {
+			t.Error("Reconcile() expected error but got none")
+		}
+	})
 }
 
-func createTestReconciler(scheme *runtime.Scheme, rule *karov1alpha1.RestartRule) (*RestartRuleReconciler, *store.MemoryRestartRuleStore) {
+func createTestReconciler(scheme *runtime.Scheme, initObjs ...client.Object) (*RestartRuleReconciler, *store.MemoryRestartRuleStore) {
 	// Create fake client with the rule
 	fakeClient := fake.NewClientBuilder().
 		WithScheme(scheme).
-		WithObjects(rule).
-		WithStatusSubresource(rule).
+		WithObjects(initObjs...).
+		WithStatusSubresource(&karov1alpha1.RestartRule{}).
 		Build()
 
 	// Create memory store
@@ -376,4 +426,16 @@ func validateRuleInStore(t *testing.T, memStore store.RestartRuleStore, ctx cont
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && (s == substr || len(substr) == 0 ||
 		(len(s) > 0 && (s[0:len(substr)] == substr || contains(s[1:], substr))))
+}
+
+type fakeClientWithError struct {
+	client.Client
+	getErr error
+}
+
+func (f *fakeClientWithError) Get(ctx context.Context, key types.NamespacedName, obj client.Object, opts ...client.GetOption) error {
+	if f.getErr != nil {
+		return f.getErr
+	}
+	return f.Client.Get(ctx, key, obj, opts...)
 }

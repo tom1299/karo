@@ -75,48 +75,95 @@ func (r *BaseReconciler) RestartDeployment(ctx context.Context, target karov1alp
 }
 
 // ProcessRestartRules processes restart rules for deployments
+//
+//nolint:cyclop
 func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules []*karov1alpha1.RestartRule, resourceName, resourceType string) error {
 	logger := log.FromContext(ctx)
 
-	// For every restart rule returned by the store
+	type targetInfo struct {
+		target karov1alpha1.TargetSpec
+		rules  []*karov1alpha1.RestartRule
+	}
+
+	// A map to keep track of unique targets and the rules that apply to them
+	uniqueTargets := make(map[string]targetInfo)
+
+	// First, collect all unique targets from the restart rules
 	for _, rule := range restartRules {
-		logger.Info("Processing restart rule",
-			"restartRule", rule.Name,
-			"namespace", rule.Namespace,
+		for _, target := range rule.Spec.Targets {
+			if target.Kind == "Deployment" {
+				targetNamespace := target.Namespace
+				if targetNamespace == "" {
+					targetNamespace = rule.Namespace
+				}
+				targetKey := fmt.Sprintf("%s/%s/%s", target.Kind, targetNamespace, target.Name)
+
+				data := uniqueTargets[targetKey]
+				if data.rules == nil {
+					data.target = target
+				}
+				data.rules = append(data.rules, rule)
+				uniqueTargets[targetKey] = data
+			}
+		}
+	}
+
+	// Now, iterate over the unique targets and restart them
+	for _, data := range uniqueTargets {
+		target := data.target
+		rules := data.rules
+
+		// The context for the restart can be taken from the first rule.
+		ruleForRestartContext := rules[0]
+
+		targetNamespace := target.Namespace
+		if targetNamespace == "" {
+			targetNamespace = ruleForRestartContext.Namespace
+		}
+
+		logger.Info("Processing restart rule(s) for target",
+			"target", target.Name,
+			"namespace", targetNamespace,
 			"resource", resourceName,
 			"resourceType", resourceType)
 
-		// Get all targets and iterate over them
-		for _, target := range rule.Spec.Targets {
-			// If the target is a Deployment, do a rollout restart
-			if target.Kind == "Deployment" {
-				if err := r.RestartDeployment(ctx, target, rule); err != nil {
-					logger.Error(err, "Failed to restart deployment",
-						"deployment", target.Name,
-						"resource", resourceName,
-						"resourceType", resourceType,
-						"restartRule", rule.Name)
+		// Log if a target is affected by multiple rules
+		if len(rules) > 1 {
+			ruleNames := make([]string, len(rules))
+			for i, rule := range rules {
+				ruleNames[i] = rule.Name
+			}
+			logger.Info("Multiple restart rules match the same target; a single restart will be performed",
+				"target", target.Name,
+				"namespace", targetNamespace,
+				"rules", ruleNames)
+		}
 
-					// Record failed restart in status
-					if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Failed", err.Error()); statusErr != nil {
-						logger.Error(statusErr, "Failed to record restart event")
-					}
+		// Perform the restart
+		err := r.RestartDeployment(ctx, target, ruleForRestartContext)
 
-					continue
-				}
+		status := "Success"
+		message := ""
+		if err != nil {
+			status = "Failed"
+			message = err.Error()
+			logger.Error(err, "Failed to restart deployment",
+				"deployment", target.Name,
+				"namespace", targetNamespace,
+				"resource", resourceName,
+				"resourceType", resourceType)
+		} else {
+			logger.Info("Successfully restarted deployment",
+				"deployment", target.Name,
+				"namespace", targetNamespace,
+				"resource", resourceName,
+				"resourceType", resourceType)
+		}
 
-				// Record successful restart in status
-				if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Success", ""); statusErr != nil {
-					logger.Error(statusErr, "Failed to record restart event")
-				}
-
-				// Log the restart of the deployment
-				logger.Info("Successfully restarted deployment",
-					"deployment", target.Name,
-					"resource", resourceName,
-					"resourceType", resourceType,
-					"restartRule", rule.Name,
-					"namespace", target.Namespace)
+		// Record the outcome for all associated rules
+		for _, rule := range rules {
+			if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, status, message); statusErr != nil {
+				logger.Error(statusErr, "Failed to record restart event for rule", "rule", rule.Name)
 			}
 		}
 	}

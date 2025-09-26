@@ -18,8 +18,11 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1277,5 +1280,266 @@ func TestMemoryRestartRuleStore_matchesOperationType(t *testing.T) {
 				t.Errorf("matchesOperationType() = %v, expected %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestMemoryRestartRuleStore_DelayedRestartFunctionality(t *testing.T) {
+	store := NewMemoryRestartRuleStore()
+	ctx := context.Background()
+
+	// Test initial state - no delayed restarts
+	t.Run("initial state", func(t *testing.T) {
+		delayed := store.GetDelayedRestarts(ctx)
+		if len(delayed) != 0 {
+			t.Errorf("Expected no delayed restarts initially, got %d", len(delayed))
+		}
+
+		isDelayed := store.IsWorkloadDelayed(ctx, "default/test-deployment", "Deployment")
+		if isDelayed {
+			t.Error("Expected workload to not be delayed initially")
+		}
+	})
+
+	// Test adding delayed restart
+	t.Run("add delayed restart", func(t *testing.T) {
+		delay := time.Second * 30
+		store.AddDelayedRestart(ctx, "default/test-deployment", "Deployment", delay)
+
+		isDelayed := store.IsWorkloadDelayed(ctx, "default/test-deployment", "Deployment")
+		if !isDelayed {
+			t.Error("Expected workload to be delayed after adding")
+		}
+
+		delayed := store.GetDelayedRestarts(ctx)
+		if len(delayed) != 1 {
+			t.Errorf("Expected 1 delayed restart, got %d", len(delayed))
+		}
+
+		if delayed[0].WorkloadKey != "default/test-deployment" {
+			t.Errorf("Expected workload key 'default/test-deployment', got '%s'", delayed[0].WorkloadKey)
+		}
+		if delayed[0].WorkloadKind != "Deployment" {
+			t.Errorf("Expected workload kind 'Deployment', got '%s'", delayed[0].WorkloadKind)
+		}
+		if delayed[0].Delay != delay {
+			t.Errorf("Expected delay %v, got %v", delay, delayed[0].Delay)
+		}
+	})
+
+	// Test updating with longer delay
+	t.Run("update with longer delay", func(t *testing.T) {
+		longerDelay := time.Minute * 2
+		store.AddDelayedRestart(ctx, "default/test-deployment", "Deployment", longerDelay)
+
+		delayed := store.GetDelayedRestarts(ctx)
+		if len(delayed) != 1 {
+			t.Errorf("Expected 1 delayed restart, got %d", len(delayed))
+		}
+
+		if delayed[0].Delay != longerDelay {
+			t.Errorf("Expected delay to be updated to %v, got %v", longerDelay, delayed[0].Delay)
+		}
+	})
+
+	// Test updating with shorter delay (should keep longer one)
+	t.Run("update with shorter delay", func(t *testing.T) {
+		shorterDelay := time.Second * 10
+		originalDelay := time.Minute * 2
+
+		// Get the current restart time to verify it doesn't change
+		delayed := store.GetDelayedRestarts(ctx)
+		originalRestartAt := delayed[0].RestartAt
+
+		store.AddDelayedRestart(ctx, "default/test-deployment", "Deployment", shorterDelay)
+
+		delayed = store.GetDelayedRestarts(ctx)
+		if len(delayed) != 1 {
+			t.Errorf("Expected 1 delayed restart, got %d", len(delayed))
+		}
+
+		// Should still have the original longer delay
+		if delayed[0].Delay != originalDelay {
+			t.Errorf("Expected delay to remain %v, got %v", originalDelay, delayed[0].Delay)
+		}
+
+		// RestartAt should not have changed
+		if !delayed[0].RestartAt.Equal(originalRestartAt) {
+			t.Error("RestartAt should not have changed when adding shorter delay")
+		}
+	})
+
+	// Test multiple workloads
+	t.Run("multiple workloads", func(t *testing.T) {
+		store.AddDelayedRestart(ctx, "default/other-deployment", "Deployment", time.Second*45)
+		store.AddDelayedRestart(ctx, "default/test-statefulset", "StatefulSet", time.Minute)
+
+		delayed := store.GetDelayedRestarts(ctx)
+		if len(delayed) != 3 {
+			t.Errorf("Expected 3 delayed restarts, got %d", len(delayed))
+		}
+
+		// Check all workloads are delayed
+		workloads := []struct {
+			key  string
+			kind string
+		}{
+			{"default/test-deployment", "Deployment"},
+			{"default/other-deployment", "Deployment"},
+			{"default/test-statefulset", "StatefulSet"},
+		}
+
+		for _, wl := range workloads {
+			if !store.IsWorkloadDelayed(ctx, wl.key, wl.kind) {
+				t.Errorf("Expected workload %s/%s to be delayed", wl.kind, wl.key)
+			}
+		}
+	})
+
+	// Test removing delayed restart
+	t.Run("remove delayed restart", func(t *testing.T) {
+		store.RemoveDelayedRestart(ctx, "default/test-deployment", "Deployment")
+
+		isDelayed := store.IsWorkloadDelayed(ctx, "default/test-deployment", "Deployment")
+		if isDelayed {
+			t.Error("Expected workload to not be delayed after removal")
+		}
+
+		delayed := store.GetDelayedRestarts(ctx)
+		if len(delayed) != 2 {
+			t.Errorf("Expected 2 delayed restarts after removal, got %d", len(delayed))
+		}
+
+		// Verify the correct one was removed
+		for _, d := range delayed {
+			if d.WorkloadKey == "default/test-deployment" && d.WorkloadKind == "Deployment" {
+				t.Error("Removed workload still appears in delayed restarts")
+			}
+		}
+	})
+}
+
+func TestMemoryRestartRuleStore_ExpiredDelays(t *testing.T) {
+	store := NewMemoryRestartRuleStore()
+	ctx := context.Background()
+
+	// Add a delay that has already expired
+	expiredDelay := time.Millisecond * -100 // Negative delay = already expired
+	store.AddDelayedRestart(ctx, "default/expired-deployment", "Deployment", expiredDelay)
+
+	// Add a valid future delay
+	futureDelay := time.Hour
+	store.AddDelayedRestart(ctx, "default/future-deployment", "Deployment", futureDelay)
+
+	t.Run("expired delays are cleaned up in GetDelayedRestarts", func(t *testing.T) {
+		delayed := store.GetDelayedRestarts(ctx)
+		if len(delayed) != 1 {
+			t.Errorf("Expected 1 non-expired delayed restart, got %d", len(delayed))
+		}
+
+		if delayed[0].WorkloadKey != "default/future-deployment" {
+			t.Errorf("Expected future deployment to remain, got %s", delayed[0].WorkloadKey)
+		}
+	})
+
+	t.Run("expired delays return false for IsWorkloadDelayed", func(t *testing.T) {
+		isDelayed := store.IsWorkloadDelayed(ctx, "default/expired-deployment", "Deployment")
+		if isDelayed {
+			t.Error("Expected expired workload to not be delayed")
+		}
+
+		isDelayed = store.IsWorkloadDelayed(ctx, "default/future-deployment", "Deployment")
+		if !isDelayed {
+			t.Error("Expected future workload to be delayed")
+		}
+	})
+}
+
+func TestMemoryRestartRuleStore_ConcurrentAccess(t *testing.T) {
+	store := NewMemoryRestartRuleStore()
+	ctx := context.Background()
+
+	const numWorkers = 10
+	const numOperations = 100
+
+	var wg sync.WaitGroup
+
+	// Test concurrent adds - use longer delays to prevent expiration during test
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := 0; j < numOperations; j++ {
+				workloadKey := fmt.Sprintf("namespace-%d/deployment-%d", workerID, j)
+				delay := time.Hour // Use longer delay to prevent expiration
+				store.AddDelayedRestart(ctx, workloadKey, "Deployment", delay)
+			}
+		}(i)
+	}
+
+	// Test concurrent reads
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := 0; j < numOperations; j++ {
+				store.GetDelayedRestarts(ctx)
+				workloadKey := fmt.Sprintf("namespace-%d/deployment-%d", workerID, j)
+				store.IsWorkloadDelayed(ctx, workloadKey, "Deployment")
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	// Verify that we have the expected number of items and no race conditions occurred
+	delayed := store.GetDelayedRestarts(ctx)
+	expectedCount := numWorkers * numOperations
+	if len(delayed) != expectedCount {
+		t.Errorf("Expected %d delayed restarts after concurrent operations, got %d", expectedCount, len(delayed))
+	}
+
+	// Verify all items are unique
+	seen := make(map[string]bool)
+	for _, d := range delayed {
+		key := fmt.Sprintf("%s/%s", d.WorkloadKind, d.WorkloadKey)
+		if seen[key] {
+			t.Errorf("Duplicate delayed restart found: %s", key)
+		}
+		seen[key] = true
+	}
+}
+
+func TestMemoryRestartRuleStore_DelayKey(t *testing.T) {
+	store := NewMemoryRestartRuleStore()
+
+	tests := []struct {
+		workloadKey  string
+		workloadKind string
+		expected     string
+	}{
+		{"default/test-deployment", "Deployment", "Deployment/default/test-deployment"},
+		{"kube-system/test-statefulset", "StatefulSet", "StatefulSet/kube-system/test-statefulset"},
+		{"namespace/with-dashes/deployment-name", "Deployment", "Deployment/namespace/with-dashes/deployment-name"},
+	}
+
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%s_%s", tt.workloadKind, tt.workloadKey), func(t *testing.T) {
+			result := store.delayKey(tt.workloadKey, tt.workloadKind)
+			if result != tt.expected {
+				t.Errorf("delayKey() = %s, expected %s", result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestMemoryRestartRuleStore_NewConstructorInitializesDelayedRestarts(t *testing.T) {
+	store := NewMemoryRestartRuleStore()
+
+	if store.delayedRestarts == nil {
+		t.Fatal("NewMemoryRestartRuleStore() created store with nil delayedRestarts map")
+	}
+
+	if len(store.delayedRestarts) != 0 {
+		t.Errorf("NewMemoryRestartRuleStore() created store with non-empty delayedRestarts map, got %d entries", len(store.delayedRestarts))
 	}
 }

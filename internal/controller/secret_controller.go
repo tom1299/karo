@@ -52,6 +52,9 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		"name", resourceInfo.Name,
 		"namespace", resourceInfo.Namespace)
 
+	// Process any delayed restarts that are ready to execute
+	r.ProcessDelayedRestarts(ctx)
+
 	// Check if this is an update event
 	if r.operationType == store.OperationUpdate {
 		// Get matching restart rules from the store

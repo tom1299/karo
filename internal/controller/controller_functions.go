@@ -74,11 +74,19 @@ func (r *BaseReconciler) RestartDeployment(ctx context.Context, target karov1alp
 	return nil
 }
 
-// ProcessRestartRules processes restart rules for deployments
+// ProcessRestartRules processes restart rules for deployments with delay support
 func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules []*karov1alpha1.RestartRule, resourceName, resourceType string) error {
 	logger := log.FromContext(ctx)
 
-	// For every restart rule returned by the store
+	// Group targets by workload key to handle multiple rules applying to the same target
+	type targetInfo struct {
+		target   karov1alpha1.TargetSpec
+		rules    []*karov1alpha1.RestartRule
+		maxDelay *time.Duration
+	}
+	targetMap := make(map[string]*targetInfo)
+
+	// First, collect all targets and find the maximum delay for each
 	for _, rule := range restartRules {
 		logger.Info("Processing restart rule",
 			"restartRule", rule.Name,
@@ -86,39 +94,114 @@ func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules [
 			"resource", resourceName,
 			"resourceType", resourceType)
 
-		// Get all targets and iterate over them
 		for _, target := range rule.Spec.Targets {
-			// If the target is a Deployment, do a rollout restart
-			if target.Kind == "Deployment" {
-				if err := r.RestartDeployment(ctx, target, rule); err != nil {
-					logger.Error(err, "Failed to restart deployment",
-						"deployment", target.Name,
-						"resource", resourceName,
-						"resourceType", resourceType,
-						"restartRule", rule.Name)
+			if target.Kind != "Deployment" {
+				continue // Only handle Deployment targets for now
+			}
 
-					// Record failed restart in status
-					if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Failed", err.Error()); statusErr != nil {
-						logger.Error(statusErr, "Failed to record restart event")
-					}
+			targetNamespace := target.Namespace
+			if targetNamespace == "" {
+				targetNamespace = rule.Namespace
+			}
+			workloadKey := fmt.Sprintf("%s/%s", targetNamespace, target.Name)
 
-					continue
+			// Get or create target info
+			info, exists := targetMap[workloadKey]
+			if !exists {
+				info = &targetInfo{
+					target: target,
+					rules:  make([]*karov1alpha1.RestartRule, 0),
 				}
+				targetMap[workloadKey] = info
+			}
 
-				// Record successful restart in status
-				if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Success", ""); statusErr != nil {
-					logger.Error(statusErr, "Failed to record restart event")
+			// Add this rule
+			info.rules = append(info.rules, rule)
+
+			// Update maximum delay
+			if rule.Spec.DelayRestart != nil {
+				delay := rule.Spec.DelayRestart.Duration
+				if info.maxDelay == nil || delay > *info.maxDelay {
+					info.maxDelay = &delay
 				}
-
-				// Log the restart of the deployment
-				logger.Info("Successfully restarted deployment",
-					"deployment", target.Name,
-					"resource", resourceName,
-					"resourceType", resourceType,
-					"restartRule", rule.Name,
-					"namespace", target.Namespace)
 			}
 		}
+	}
+
+	// Process each unique target
+	for workloadKey, info := range targetMap {
+		target := info.target
+		targetNamespace := target.Namespace
+		if targetNamespace == "" {
+			targetNamespace = info.rules[0].Namespace
+		}
+
+		// Check if workload is already delayed
+		if r.RestartRuleStore.IsWorkloadDelayed(ctx, workloadKey, target.Kind) {
+			logger.Info("Skipping restart of already delayed workload",
+				"deployment", target.Name,
+				"namespace", targetNamespace,
+				"resource", resourceName,
+				"resourceType", resourceType,
+				"workloadKey", workloadKey)
+
+			continue
+		}
+
+		// If there's a delay, schedule delayed restart
+		if info.maxDelay != nil {
+			r.RestartRuleStore.AddDelayedRestart(ctx, workloadKey, target.Kind, *info.maxDelay)
+
+			logger.Info("✅ DELAY: Scheduled delayed restart for deployment",
+				"deployment", target.Name,
+				"namespace", targetNamespace,
+				"delay", info.maxDelay.String(),
+				"resource", resourceName,
+				"resourceType", resourceType,
+				"workloadKey", workloadKey)
+
+			// Record delayed restart events for all rules
+			for _, rule := range info.rules {
+				message := "Restart delayed by " + info.maxDelay.String()
+				if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Delayed", message); statusErr != nil {
+					logger.Error(statusErr, "Failed to record delayed restart event")
+				}
+			}
+
+			continue
+		}
+
+		// No delay, restart immediately
+		if err := r.RestartDeployment(ctx, target, info.rules[0]); err != nil {
+			logger.Error(err, "Failed to restart deployment",
+				"deployment", target.Name,
+				"resource", resourceName,
+				"resourceType", resourceType,
+				"workloadKey", workloadKey)
+
+			// Record failed restart in status for all rules
+			for _, rule := range info.rules {
+				if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Failed", err.Error()); statusErr != nil {
+					logger.Error(statusErr, "Failed to record restart event")
+				}
+			}
+
+			continue
+		}
+
+		// Record successful restart in status for all rules
+		for _, rule := range info.rules {
+			if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Success", ""); statusErr != nil {
+				logger.Error(statusErr, "Failed to record restart event")
+			}
+		}
+
+		logger.Info("Successfully restarted deployment",
+			"deployment", target.Name,
+			"namespace", targetNamespace,
+			"resource", resourceName,
+			"resourceType", resourceType,
+			"workloadKey", workloadKey)
 	}
 
 	return nil
@@ -186,6 +269,116 @@ func (r *BaseReconciler) recordRestartEvent(ctx context.Context, rule *karov1alp
 
 	// Update status
 	return r.Status().Update(ctx, &currentRule)
+}
+
+// ProcessDelayedRestarts processes all delayed restarts that are ready to execute
+func (r *BaseReconciler) ProcessDelayedRestarts(ctx context.Context) {
+	logger := log.FromContext(ctx)
+
+	delayedRestarts := r.RestartRuleStore.GetDelayedRestarts(ctx)
+	now := time.Now()
+
+	if len(delayedRestarts) > 0 {
+		logger.Info("🔄 DELAY: Processing delayed restarts",
+			"count", len(delayedRestarts),
+			"currentTime", now.Format(time.RFC3339))
+	}
+
+	for _, delayedRestart := range delayedRestarts {
+		// Check if the delay has expired
+		if now.Before(delayedRestart.RestartAt) {
+			continue // Not yet time to restart
+		}
+
+		logger.Info("⚡ DELAY: Executing delayed restart NOW",
+			"workloadKey", delayedRestart.WorkloadKey,
+			"workloadKind", delayedRestart.WorkloadKind,
+			"delay", delayedRestart.Delay.String(),
+			"scheduledAt", delayedRestart.ScheduledAt.Format(time.RFC3339),
+			"restartAt", delayedRestart.RestartAt.Format(time.RFC3339))
+
+		// Remove the delayed restart from tracking
+		r.RestartRuleStore.RemoveDelayedRestart(ctx, delayedRestart.WorkloadKey, delayedRestart.WorkloadKind)
+
+		// Parse workload key to get namespace and name
+		parts := splitWorkloadKey(delayedRestart.WorkloadKey)
+		if len(parts) != 2 {
+			logger.Error(nil, "Invalid workload key format",
+				"workloadKey", delayedRestart.WorkloadKey,
+				"expected", "namespace/name")
+
+			continue
+		}
+
+		namespace := parts[0]
+		name := parts[1]
+
+		// Create a target spec for the restart
+		target := karov1alpha1.TargetSpec{
+			Kind:      delayedRestart.WorkloadKind,
+			Name:      name,
+			Namespace: namespace,
+		}
+
+		// Create a minimal rule for context (we need this for recordRestartEvent)
+		rule := &karov1alpha1.RestartRule{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "delayed-restart",
+				Namespace: namespace,
+			},
+		}
+
+		// Execute the restart
+		if delayedRestart.WorkloadKind == "Deployment" {
+			if err := r.RestartDeployment(ctx, target, rule); err != nil {
+				logger.Error(err, "Failed to execute delayed restart",
+					"deployment", name,
+					"namespace", namespace,
+					"workloadKey", delayedRestart.WorkloadKey)
+
+				// Record failed restart in status
+				if statusErr := r.recordRestartEvent(ctx, rule, target, "delayed", "restart", "Failed", err.Error()); statusErr != nil {
+					logger.Error(statusErr, "Failed to record delayed restart event")
+				}
+
+				continue
+			}
+
+			// Record successful delayed restart in status
+			message := "Delayed restart executed after " + delayedRestart.Delay.String()
+			if statusErr := r.recordRestartEvent(ctx, rule, target, "delayed", "restart", "Success", message); statusErr != nil {
+				logger.Error(statusErr, "Failed to record delayed restart event")
+			}
+
+			logger.Info("Successfully executed delayed restart",
+				"deployment", name,
+				"namespace", namespace,
+				"delay", delayedRestart.Delay.String())
+		}
+	}
+}
+
+// splitWorkloadKey splits a workload key in the format "namespace/name"
+func splitWorkloadKey(workloadKey string) []string {
+	// Split by "/" to get namespace and name
+	parts := make([]string, 0, 2)
+	lastSlash := -1
+	for i := len(workloadKey) - 1; i >= 0; i-- {
+		if workloadKey[i] == '/' {
+			lastSlash = i
+
+			break
+		}
+	}
+
+	if lastSlash == -1 {
+		return []string{workloadKey} // No slash found
+	}
+
+	parts = append(parts, workloadKey[:lastSlash])   // namespace
+	parts = append(parts, workloadKey[lastSlash+1:]) // name
+
+	return parts
 }
 
 // ResourceInfo contains information about a Kubernetes resource

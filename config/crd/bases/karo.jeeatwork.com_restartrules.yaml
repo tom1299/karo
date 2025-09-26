@@ -118,6 +118,13 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+              delayRestart:
+                description: |-
+                  DelayRestart specifies the duration to delay restarts when changes are detected
+                  If multiple restart rules contain delays, the highest value will be used
+                  If some rules have delays and others don't, the restart will be delayed
+                  Format follows Kubernetes duration format (e.g., "30s", "5m", "1h")
+                type: string
               targets:
                 description: Targets defines the resources to restart when changes
                   are detected

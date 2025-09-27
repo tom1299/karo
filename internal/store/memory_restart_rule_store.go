@@ -18,7 +18,10 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"regexp"
+	"sync"
+	"time"
 
 	v2 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,21 +33,30 @@ import (
 type MemoryRestartRuleStore struct {
 	// TODO: Use rules grouped by kind (Secret/ConfigMap) for faster lookup
 	rules map[string]*karov1alpha1.RestartRule
+
+	// Delayed restart tracking
+	delayedRestarts map[string]DelayedRestart // key: workloadKind/workloadKey
+	mu              sync.RWMutex              // protects concurrent access
 }
 
 func NewMemoryRestartRuleStore() *MemoryRestartRuleStore {
 	return &MemoryRestartRuleStore{
-		rules: make(map[string]*karov1alpha1.RestartRule),
+		rules:           make(map[string]*karov1alpha1.RestartRule),
+		delayedRestarts: make(map[string]DelayedRestart),
 	}
 }
 
 // Add inserts or updates a RestartRule.
 func (s *MemoryRestartRuleStore) Add(ctx context.Context, rule *karov1alpha1.RestartRule) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.rules[rule.Namespace+"/"+rule.Name] = rule
 }
 
 // Remove deletes a RestartRule by namespace and name.
 func (s *MemoryRestartRuleStore) Remove(ctx context.Context, namespace, name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.rules[namespace+"/"+name] = nil
 }
 
@@ -57,6 +69,9 @@ func (s *MemoryRestartRuleStore) GetForConfigMap(ctx context.Context, configmap 
 }
 
 func (s *MemoryRestartRuleStore) GetForKind(ctx context.Context, meta v1.ObjectMeta, kind string, operation OperationType) []*karov1alpha1.RestartRule {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	var matchedRules []*karov1alpha1.RestartRule
 	for _, rule := range s.rules {
 		if rule == nil {
@@ -134,4 +149,97 @@ func (s *MemoryRestartRuleStore) matchesOperationType(change karov1alpha1.Change
 	}
 
 	return false
+}
+
+// delayKey creates a consistent key for delayed restart tracking
+func (s *MemoryRestartRuleStore) delayKey(workloadKey, workloadKind string) string {
+	return fmt.Sprintf("%s/%s", workloadKind, workloadKey)
+}
+
+// IsWorkloadDelayed checks if a workload is currently scheduled for delayed restart
+func (s *MemoryRestartRuleStore) IsWorkloadDelayed(ctx context.Context, workloadKey, workloadKind string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key := s.delayKey(workloadKey, workloadKind)
+	delayedRestart, exists := s.delayedRestarts[key]
+	if !exists {
+		return false
+	}
+
+	// Check if the delay has expired
+	if time.Now().After(delayedRestart.RestartAt) {
+		// Delay has expired, remove it
+		delete(s.delayedRestarts, key)
+
+		return false
+	}
+
+	return true
+}
+
+// AddDelayedRestart schedules a workload for delayed restart
+// If the workload is already delayed, it extends the delay if the new delay is longer
+func (s *MemoryRestartRuleStore) AddDelayedRestart(ctx context.Context, workloadKey, workloadKind string, delay time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := s.delayKey(workloadKey, workloadKind)
+	now := time.Now()
+	newRestartAt := now.Add(delay)
+
+	// Check if there's already a delayed restart for this workload
+	if existingDelay, exists := s.delayedRestarts[key]; exists {
+		// Use the longer delay (later restart time)
+		if newRestartAt.After(existingDelay.RestartAt) {
+			s.delayedRestarts[key] = DelayedRestart{
+				WorkloadKey:  workloadKey,
+				WorkloadKind: workloadKind,
+				ScheduledAt:  now,
+				RestartAt:    newRestartAt,
+				Delay:        delay,
+			}
+		}
+		// If the existing delay is longer, keep it
+		return
+	}
+
+	// Add new delayed restart
+	s.delayedRestarts[key] = DelayedRestart{
+		WorkloadKey:  workloadKey,
+		WorkloadKind: workloadKind,
+		ScheduledAt:  now,
+		RestartAt:    newRestartAt,
+		Delay:        delay,
+	}
+}
+
+// GetDelayedRestarts returns all currently scheduled delayed restarts
+func (s *MemoryRestartRuleStore) GetDelayedRestarts(ctx context.Context) []DelayedRestart {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var delayedRestarts []DelayedRestart
+	now := time.Now()
+
+	// Clean up expired delays and return active ones
+	for key, delayedRestart := range s.delayedRestarts {
+		if now.After(delayedRestart.RestartAt) {
+			// Delay has expired, remove it
+			delete(s.delayedRestarts, key)
+		} else {
+			delayedRestarts = append(delayedRestarts, delayedRestart)
+		}
+	}
+
+	return delayedRestarts
+}
+
+// RemoveDelayedRestart removes a delayed restart for the specified workload
+func (s *MemoryRestartRuleStore) RemoveDelayedRestart(ctx context.Context, workloadKey, workloadKind string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	key := s.delayKey(workloadKey, workloadKind)
+	delete(s.delayedRestarts, key)
 }

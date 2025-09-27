@@ -118,6 +118,11 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+              delayRestart:
+                description: |-
+                  DelayRestart defines how long to delay the restart of workloads after a change is detected
+                  If multiple rules apply to the same workload, the highest delay value is used
+                type: string
               targets:
                 description: Targets defines the resources to restart when changes
                   are detected
@@ -299,6 +304,7 @@ spec:
                       enum:
                       - Success
                       - Failed
+                      - Delayed
                       type: string
                     target:
                       description: Target identifies the workload that was restarted

@@ -31,6 +31,11 @@ type RestartRuleSpec struct {
 	// +required
 	// +kubebuilder:validation:MinItems=1
 	Targets []TargetSpec `json:"targets"`
+
+	// DelayRestart defines how long to delay the restart of workloads after a change is detected
+	// If multiple rules apply to the same workload, the highest delay value is used
+	// +optional
+	DelayRestart *metav1.Duration `json:"delayRestart,omitempty"`
 }
 
 // ChangeSpec defines a resource whose changes trigger restarts
@@ -120,7 +125,7 @@ type RestartEvent struct {
 	TriggerResource ResourceReference `json:"triggerResource"`
 
 	// Status indicates whether the restart was successful
-	// +kubebuilder:validation:Enum=Success;Failed
+	// +kubebuilder:validation:Enum=Success;Failed;Delayed
 	// +required
 	Status string `json:"status"`
 

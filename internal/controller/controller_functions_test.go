@@ -37,6 +37,7 @@ var errUpdateFailed = errors.New("update failed")
 // MockStatusWriter is a mock implementation of the client.StatusWriter interface for testing.
 type MockStatusWriter struct {
 	mock.Mock
+
 	client.StatusWriter
 }
 
@@ -61,6 +62,7 @@ func (m *MockStatusWriter) Patch(ctx context.Context, obj client.Object, patch c
 // MockClient is a mock implementation of the client.Client interface for testing.
 type MockClient struct {
 	mock.Mock
+
 	client.Client
 
 	statusWriter client.StatusWriter
@@ -92,9 +94,7 @@ func (m *MockClient) Update(ctx context.Context, obj client.Object, opts ...clie
 
 // Status returns a mock status writer.
 // This is required to mock the client.Client interface, and the linter warning is suppressed.
-//
-//nolint:ireturn
-func (m *MockClient) Status() client.StatusWriter {
+func (m *MockClient) Status() client.StatusWriter { //nolint:ireturn
 	if m.statusWriter == nil {
 		m.statusWriter = &MockStatusWriter{}
 	}

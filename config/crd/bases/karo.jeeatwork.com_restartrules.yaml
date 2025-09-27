@@ -118,6 +118,15 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+              delayRestart:
+                description: |-
+                  DelayRestart specifies the delay in seconds before triggering the restart.
+                  When multiple rules with delays apply to the same target, the highest delay value is used.
+                  If some rules have delays and some don't, the restart is still delayed by the highest delay.
+                format: int32
+                maximum: 3600
+                minimum: 0
+                type: integer
               targets:
                 description: Targets defines the resources to restart when changes
                   are detected

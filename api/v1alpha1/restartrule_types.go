@@ -31,6 +31,13 @@ type RestartRuleSpec struct {
 	// +required
 	// +kubebuilder:validation:MinItems=1
 	Targets []TargetSpec `json:"targets"`
+
+	// DelayRestart specifies the duration to delay restarts when changes are detected
+	// If multiple restart rules contain delays, the highest value will be used
+	// If some rules have delays and others don't, the restart will be delayed
+	// Format follows Kubernetes duration format (e.g., "30s", "5m", "1h")
+	// +optional
+	DelayRestart *metav1.Duration `json:"delayRestart,omitempty"`
 }
 
 // ChangeSpec defines a resource whose changes trigger restarts

@@ -1,0 +1,19 @@
+apiVersion: v2
+name: karo
+description: A Kubernetes operator that automatically restarts deployments when ConfigMaps or Secrets they depend on are updated
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - kubernetes
+  - operator
+  - configmap
+  - secret
+  - deployment
+  - restart
+home: https://github.com/tom1299/karo
+sources:
+  - https://github.com/tom1299/karo
+maintainers:
+  - name: tom1299
+    url: https://github.com/tom1299

@@ -156,7 +156,9 @@ func TestProcessRestartRules(t *testing.T) {
 				mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything).Return(nil)
 				mockClient.On("Update", mock.Anything, mock.AnythingOfType("*v1.Deployment")).Return(errUpdateFailed)
 				mockStatusWriter.On("Update", mock.Anything, mock.MatchedBy(func(rule *karov1alpha1.RestartRule) bool {
-					return len(rule.Status.RestartHistory) > 0 && rule.Status.RestartHistory[0].Status == "Failed"
+					historyLen := len(rule.Status.RestartHistory)
+
+					return historyLen > 0 && rule.Status.RestartHistory[historyLen-1].Status == "Failed"
 				})).Return(nil)
 			},
 		},

@@ -31,6 +31,14 @@ type RestartRuleSpec struct {
 	// +required
 	// +kubebuilder:validation:MinItems=1
 	Targets []TargetSpec `json:"targets"`
+
+	// DelayRestart specifies the delay in seconds before triggering the restart.
+	// When multiple rules with delays apply to the same target, the highest delay value is used.
+	// If some rules have delays and some don't, the restart is still delayed by the highest delay.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=3600
+	// +optional
+	DelayRestart *int32 `json:"delayRestart,omitempty"`
 }
 
 // ChangeSpec defines a resource whose changes trigger restarts

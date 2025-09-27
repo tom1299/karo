@@ -153,6 +153,90 @@ func TestRestartRuleReconciler_validateRule(t *testing.T) {
 			wantErr: true,
 			errMsg:  "cannot specify both name and selector",
 		},
+		{
+			name: "valid delayRestart within range",
+			rule: &karov1alpha1.RestartRule{
+				Spec: karov1alpha1.RestartRuleSpec{
+					Changes: []karov1alpha1.ChangeSpec{
+						{
+							Kind: "ConfigMap",
+							Name: "my-config",
+						},
+					},
+					Targets: []karov1alpha1.TargetSpec{
+						{
+							Kind: "Deployment",
+							Name: "my-app",
+						},
+					},
+					DelayRestart: int32Ptr(30),
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid delayRestart at minimum boundary",
+			rule: &karov1alpha1.RestartRule{
+				Spec: karov1alpha1.RestartRuleSpec{
+					Changes: []karov1alpha1.ChangeSpec{
+						{
+							Kind: "ConfigMap",
+							Name: "my-config",
+						},
+					},
+					Targets: []karov1alpha1.TargetSpec{
+						{
+							Kind: "Deployment",
+							Name: "my-app",
+						},
+					},
+					DelayRestart: int32Ptr(0),
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "valid delayRestart at maximum boundary",
+			rule: &karov1alpha1.RestartRule{
+				Spec: karov1alpha1.RestartRuleSpec{
+					Changes: []karov1alpha1.ChangeSpec{
+						{
+							Kind: "ConfigMap",
+							Name: "my-config",
+						},
+					},
+					Targets: []karov1alpha1.TargetSpec{
+						{
+							Kind: "Deployment",
+							Name: "my-app",
+						},
+					},
+					DelayRestart: int32Ptr(3600),
+				},
+			},
+			wantErr: false,
+		},
+		{
+			name: "delayRestart nil (optional field)",
+			rule: &karov1alpha1.RestartRule{
+				Spec: karov1alpha1.RestartRuleSpec{
+					Changes: []karov1alpha1.ChangeSpec{
+						{
+							Kind: "ConfigMap",
+							Name: "my-config",
+						},
+					},
+					Targets: []karov1alpha1.TargetSpec{
+						{
+							Kind: "Deployment",
+							Name: "my-app",
+						},
+					},
+					DelayRestart: nil, // Explicitly nil to test optional behavior
+				},
+			},
+			wantErr: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -249,6 +333,90 @@ func TestRestartRuleReconciler_Reconcile(t *testing.T) {
 			wantReady:     metav1.ConditionFalse,
 			wantValid:     metav1.ConditionFalse,
 			expectInStore: false,
+		},
+		{
+			name: "valid rule with delay becomes active",
+			rule: &karov1alpha1.RestartRule{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-rule-with-delay",
+					Namespace: "default",
+				},
+				Spec: karov1alpha1.RestartRuleSpec{
+					Changes: []karov1alpha1.ChangeSpec{
+						{
+							Kind: "ConfigMap",
+							Name: "my-config",
+						},
+					},
+					Targets: []karov1alpha1.TargetSpec{
+						{
+							Kind: "Deployment",
+							Name: "my-app",
+						},
+					},
+					DelayRestart: int32Ptr(30),
+				},
+			},
+			wantPhase:     "Active",
+			wantReady:     metav1.ConditionTrue,
+			wantValid:     metav1.ConditionTrue,
+			expectInStore: true,
+		},
+		{
+			name: "valid rule with zero delay becomes active",
+			rule: &karov1alpha1.RestartRule{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-rule-zero-delay",
+					Namespace: "default",
+				},
+				Spec: karov1alpha1.RestartRuleSpec{
+					Changes: []karov1alpha1.ChangeSpec{
+						{
+							Kind: "Secret",
+							Name: "my-secret",
+						},
+					},
+					Targets: []karov1alpha1.TargetSpec{
+						{
+							Kind: "Deployment",
+							Name: "my-app",
+						},
+					},
+					DelayRestart: int32Ptr(0),
+				},
+			},
+			wantPhase:     "Active",
+			wantReady:     metav1.ConditionTrue,
+			wantValid:     metav1.ConditionTrue,
+			expectInStore: true,
+		},
+		{
+			name: "valid rule with maximum delay becomes active",
+			rule: &karov1alpha1.RestartRule{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test-rule-max-delay",
+					Namespace: "default",
+				},
+				Spec: karov1alpha1.RestartRuleSpec{
+					Changes: []karov1alpha1.ChangeSpec{
+						{
+							Kind: "ConfigMap",
+							Name: "my-config",
+						},
+					},
+					Targets: []karov1alpha1.TargetSpec{
+						{
+							Kind: "Deployment",
+							Name: "my-app",
+						},
+					},
+					DelayRestart: int32Ptr(3600),
+				},
+			},
+			wantPhase:     "Active",
+			wantReady:     metav1.ConditionTrue,
+			wantValid:     metav1.ConditionTrue,
+			expectInStore: true,
 		},
 	}
 
@@ -421,13 +589,30 @@ func validateRuleInStore(t *testing.T, memStore store.RestartRuleStore, ctx cont
 	wantValid     metav1.ConditionStatus
 	expectInStore bool
 }) {
-	// Check if rule is in store
-	rules := memStore.GetForConfigMap(ctx, corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "my-config",
-			Namespace: "default",
-		},
-	}, store.OperationUpdate)
+	var rules []*karov1alpha1.RestartRule
+
+	// Check for rules based on the change type in the rule spec
+	if len(tt.rule.Spec.Changes) > 0 {
+		changeSpec := tt.rule.Spec.Changes[0]
+		switch changeSpec.Kind {
+		case "ConfigMap":
+			// Check if rule is in store for ConfigMap
+			rules = memStore.GetForConfigMap(ctx, corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      changeSpec.Name,
+					Namespace: "default",
+				},
+			}, store.OperationUpdate)
+		case "Secret":
+			// Check if rule is in store for Secret
+			rules = memStore.GetForSecret(ctx, corev1.Secret{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      changeSpec.Name,
+					Namespace: "default",
+				},
+			}, store.OperationUpdate)
+		}
+	}
 
 	foundInStore := false
 	for _, rule := range rules {
@@ -493,4 +678,9 @@ func (sw *fakeStatusWriter) Patch(ctx context.Context, obj client.Object, patch 
 
 func (sw *fakeStatusWriter) Create(ctx context.Context, obj client.Object, subResource client.Object, opts ...client.SubResourceCreateOption) error {
 	return sw.client.Status().Create(ctx, obj, subResource, opts...)
+}
+
+// int32Ptr returns a pointer to an int32 value
+func int32Ptr(val int32) *int32 {
+	return &val
 }

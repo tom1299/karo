@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-logr/logr"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,12 +35,24 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
+const (
+	// RestartAnnotation is the annotation key used to trigger deployment restarts
+	RestartAnnotation = "karo.jeeatwork.com/restartedAt"
+
+	// ConfigMapKind represents the ConfigMap resource kind
+	ConfigMapKind = "ConfigMap"
+
+	// DeploymentKind represents the Deployment resource kind
+	DeploymentKind = "Deployment"
+)
+
 // BaseReconciler contains common fields and methods for resource controllers
 type BaseReconciler struct {
 	client.Client
 
-	RestartRuleStore store.RestartRuleStore
-	operationType    store.OperationType
+	RestartRuleStore      store.RestartRuleStore
+	DelayedRestartManager DelayedRestartManager
+	operationType         store.OperationType
 }
 
 // RestartDeployment performs a rollout restart of the target deployment
@@ -64,7 +77,7 @@ func (r *BaseReconciler) RestartDeployment(ctx context.Context, target karov1alp
 		deployment.Spec.Template.Annotations = make(map[string]string)
 	}
 
-	restartAnnotation := "karo.jeeatwork.com/restartedAt"
+	restartAnnotation := RestartAnnotation
 	deployment.Spec.Template.Annotations[restartAnnotation] = time.Now().Format(time.RFC3339)
 
 	if err := r.Update(ctx, deployment); err != nil {
@@ -78,46 +91,13 @@ func (r *BaseReconciler) RestartDeployment(ctx context.Context, target karov1alp
 func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules []*karov1alpha1.RestartRule, resourceName, resourceType string) error {
 	logger := log.FromContext(ctx)
 
-	// For every restart rule returned by the store
-	for _, rule := range restartRules {
-		logger.Info("Processing restart rule",
-			"restartRule", rule.Name,
-			"namespace", rule.Namespace,
-			"resource", resourceName,
-			"resourceType", resourceType)
+	// Group restart rules by target
+	targetRulesMap := r.groupRestartRulesByTarget(restartRules, resourceName, resourceType, logger)
 
-		// Get all targets and iterate over them
-		for _, target := range rule.Spec.Targets {
-			// If the target is a Deployment, do a rollout restart
-			if target.Kind == "Deployment" {
-				if err := r.RestartDeployment(ctx, target, rule); err != nil {
-					logger.Error(err, "Failed to restart deployment",
-						"deployment", target.Name,
-						"resource", resourceName,
-						"resourceType", resourceType,
-						"restartRule", rule.Name)
-
-					// Record failed restart in status
-					if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Failed", err.Error()); statusErr != nil {
-						logger.Error(statusErr, "Failed to record restart event")
-					}
-
-					continue
-				}
-
-				// Record successful restart in status
-				if statusErr := r.recordRestartEvent(ctx, rule, target, resourceName, resourceType, "Success", ""); statusErr != nil {
-					logger.Error(statusErr, "Failed to record restart event")
-				}
-
-				// Log the restart of the deployment
-				logger.Info("Successfully restarted deployment",
-					"deployment", target.Name,
-					"resource", resourceName,
-					"resourceType", resourceType,
-					"restartRule", rule.Name,
-					"namespace", target.Namespace)
-			}
+	// Process each target group
+	for targetKey, rules := range targetRulesMap {
+		if err := r.processTargetGroup(ctx, targetKey, rules, resourceName, resourceType, logger); err != nil {
+			return err
 		}
 	}
 
@@ -143,6 +123,108 @@ func (r *BaseReconciler) CreateEventFilter() predicate.Funcs {
 			return true
 		},
 	}
+}
+
+// groupRestartRulesByTarget groups restart rules by target key
+func (r *BaseReconciler) groupRestartRulesByTarget(restartRules []*karov1alpha1.RestartRule, resourceName, resourceType string, logger logr.Logger) map[string][]*karov1alpha1.RestartRule {
+	targetRulesMap := make(map[string][]*karov1alpha1.RestartRule)
+
+	// For every restart rule returned by the store
+	for _, rule := range restartRules {
+		logger.Info("Processing restart rule",
+			"restartRule", rule.Name,
+			"namespace", rule.Namespace,
+			"resource", resourceName,
+			"resourceType", resourceType)
+
+		// Get all targets and group by target key
+		for _, target := range rule.Spec.Targets {
+			if target.Kind == DeploymentKind {
+				targetKey := r.getTargetKey(target, rule)
+				targetRulesMap[targetKey] = append(targetRulesMap[targetKey], rule)
+			}
+		}
+	}
+
+	return targetRulesMap
+}
+
+// processTargetGroup processes a group of restart rules for a specific target
+func (r *BaseReconciler) processTargetGroup(ctx context.Context, targetKey string, rules []*karov1alpha1.RestartRule, resourceName, resourceType string, logger logr.Logger) error {
+	// Extract target information from the first rule (all should have same target)
+	target := rules[0].Spec.Targets[0]
+
+	// Create restart function that will be executed (immediately or after delay)
+	restartFunc := r.createRestartFunction(ctx, target, rules, resourceName, resourceType, targetKey, logger)
+
+	// Use DelayedRestartManager to handle the restart (with or without delay)
+	if r.DelayedRestartManager != nil {
+		r.DelayedRestartManager.ScheduleRestart(ctx, targetKey, rules, restartFunc)
+	} else {
+		// Fallback to immediate execution if manager is not available
+		logger.Info("DelayedRestartManager not available, executing immediate restart")
+		if err := restartFunc(); err != nil {
+			logger.Error(err, "Failed to execute immediate restart")
+		}
+	}
+
+	return nil
+}
+
+// createRestartFunction creates a restart function for the given target and rules
+func (r *BaseReconciler) createRestartFunction(ctx context.Context, target karov1alpha1.TargetSpec, rules []*karov1alpha1.RestartRule, resourceName, resourceType, targetKey string, logger logr.Logger) func() error {
+	rule := rules[0] // Use first rule for logging/status purposes
+
+	return func() error {
+		if err := r.RestartDeployment(ctx, target, rule); err != nil {
+			r.handleRestartFailure(ctx, rules, target, resourceName, resourceType, targetKey, err, logger)
+
+			return err
+		}
+
+		// Record successful restart in status for all rules
+		for _, ruleItem := range rules {
+			if statusErr := r.recordRestartEvent(ctx, ruleItem, target, resourceName, resourceType, "Success", ""); statusErr != nil {
+				logger.Error(statusErr, "Failed to record restart event")
+			}
+		}
+
+		// Log the successful restart
+		logger.Info("Successfully restarted deployment",
+			"deployment", target.Name,
+			"resource", resourceName,
+			"resourceType", resourceType,
+			"targetKey", targetKey,
+			"rulesCount", len(rules))
+
+		return nil
+	}
+}
+
+// handleRestartFailure handles the failure case when restarting a deployment
+func (r *BaseReconciler) handleRestartFailure(ctx context.Context, rules []*karov1alpha1.RestartRule, target karov1alpha1.TargetSpec, resourceName, resourceType, targetKey string, err error, logger logr.Logger) {
+	logger.Error(err, "Failed to restart deployment",
+		"deployment", target.Name,
+		"resource", resourceName,
+		"resourceType", resourceType,
+		"targetKey", targetKey)
+
+	// Record failed restart in status for all rules
+	for _, ruleItem := range rules {
+		if statusErr := r.recordRestartEvent(ctx, ruleItem, target, resourceName, resourceType, "Failed", err.Error()); statusErr != nil {
+			logger.Error(statusErr, "Failed to record restart event")
+		}
+	}
+}
+
+// getTargetKey generates a unique key for a target
+func (r *BaseReconciler) getTargetKey(target karov1alpha1.TargetSpec, rule *karov1alpha1.RestartRule) string {
+	targetNamespace := target.Namespace
+	if targetNamespace == "" {
+		targetNamespace = rule.Namespace
+	}
+
+	return fmt.Sprintf("%s/%s/%s", target.Kind, targetNamespace, target.Name)
 }
 
 // recordRestartEvent records a restart event in the RestartRule status
@@ -200,7 +282,7 @@ func GetConfigMapInfo(configMap corev1.ConfigMap) ResourceInfo {
 	return ResourceInfo{
 		Name:      configMap.Name,
 		Namespace: configMap.Namespace,
-		Type:      "ConfigMap",
+		Type:      ConfigMapKind,
 	}
 }
 

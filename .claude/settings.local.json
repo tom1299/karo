@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(make lint:*)",
+      "Bash(make test:*)",
+      "Bash(make:*)",
+      "Bash(cat:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "mcp__github__get_issue",
+      "mcp__github__add_issue_comment",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(go test:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ],
+    "deny": [],
+    "ask": []
+  },
+  "enabledMcpjsonServers": [
+    "github"
+  ]
+}

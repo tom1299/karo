@@ -123,7 +123,7 @@ func TestProcessRestartRules(t *testing.T) {
 		expectedErr          bool
 	}{
 		{
-			name:                 "single successful restart",
+			name:                 "Single rule, no duplicates, single restart",
 			restartRules:         []*karov1alpha1.RestartRule{rule1},
 			expectedDeployment:   1,
 			expectedStatusUpdate: 1,
@@ -135,7 +135,7 @@ func TestProcessRestartRules(t *testing.T) {
 			},
 		},
 		{
-			name:                 "prevent duplicate restarts",
+			name:                 "Multiple rules, same target, no duplicate restarts",
 			restartRules:         []*karov1alpha1.RestartRule{rule1, rule2},
 			expectedDeployment:   1,
 			expectedStatusUpdate: 2,
@@ -147,7 +147,7 @@ func TestProcessRestartRules(t *testing.T) {
 			},
 		},
 		{
-			name:                 "handle restart failure",
+			name:                 "single rule, single target, update fails",
 			restartRules:         []*karov1alpha1.RestartRule{rule1},
 			expectedDeployment:   1,
 			expectedStatusUpdate: 1,

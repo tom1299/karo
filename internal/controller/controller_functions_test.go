@@ -34,7 +34,7 @@ import (
 
 var errUpdateFailed = errors.New("update failed")
 
-// MockStatusWriter is a mock implementation of the client.StatusWriter interface for testing
+// MockStatusWriter is a mock implementation of the client.StatusWriter interface for testing.
 type MockStatusWriter struct {
 	mock.Mock
 	client.StatusWriter
@@ -58,10 +58,11 @@ func (m *MockStatusWriter) Patch(ctx context.Context, obj client.Object, patch c
 	return args.Error(0)
 }
 
-// MockClient is a mock implementation of the client.Client interface for testing
+// MockClient is a mock implementation of the client.Client interface for testing.
 type MockClient struct {
 	mock.Mock
 	client.Client
+
 	statusWriter client.StatusWriter
 }
 
@@ -89,6 +90,9 @@ func (m *MockClient) Update(ctx context.Context, obj client.Object, opts ...clie
 	return args.Error(0)
 }
 
+// Status returns a mock status writer.
+// This is required to mock the client.Client interface, and the linter warning is suppressed.
+//
 //nolint:ireturn
 func (m *MockClient) Status() client.StatusWriter {
 	if m.statusWriter == nil {
@@ -151,7 +155,8 @@ func TestProcessRestartRules(t *testing.T) {
 			t.Parallel()
 
 			mockClient := new(MockClient)
-			mockStatusWriter := mockClient.Status().(*MockStatusWriter)
+			mockStatusWriter, ok := mockClient.Status().(*MockStatusWriter)
+			assert.True(t, ok, "mock status writer should be of the correct type")
 
 			reconciler := &BaseReconciler{
 				Client:           mockClient,

@@ -123,6 +123,18 @@ func TestProcessRestartRules(t *testing.T) {
 		expectedErr          bool
 	}{
 		{
+			name:                 "single successful restart",
+			restartRules:         []*karov1alpha1.RestartRule{rule1},
+			expectedDeployment:   1,
+			expectedStatusUpdate: 1,
+			expectedErr:          false,
+			setupMocks: func(mockClient *MockClient, mockStatusWriter *MockStatusWriter) {
+				mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				mockClient.On("Update", mock.Anything, mock.AnythingOfType("*v1.Deployment")).Return(nil)
+				mockStatusWriter.On("Update", mock.Anything, mock.AnythingOfType("*v1alpha1.RestartRule")).Return(nil)
+			},
+		},
+		{
 			name:                 "prevent duplicate restarts",
 			restartRules:         []*karov1alpha1.RestartRule{rule1, rule2},
 			expectedDeployment:   1,

@@ -32,10 +32,6 @@ import (
 	"karo.jeeatwork.com/internal/store"
 )
 
-const (
-	statusFailed = "Failed"
-)
-
 var errUpdateFailed = errors.New("update failed")
 
 // MockStatusWriter is a mock implementation of the client.StatusWriter interface for testing
@@ -65,9 +61,7 @@ func (m *MockStatusWriter) Patch(ctx context.Context, obj client.Object, patch c
 // MockClient is a mock implementation of the client.Client interface for testing
 type MockClient struct {
 	mock.Mock
-
 	client.Client
-
 	statusWriter client.StatusWriter
 }
 
@@ -75,26 +69,15 @@ func (m *MockClient) Get(ctx context.Context, key client.ObjectKey, obj client.O
 	args := m.Called(ctx, key, obj)
 	if dep, ok := obj.(*appsv1.Deployment); ok {
 		*dep = appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      key.Name,
-				Namespace: key.Namespace,
-			},
+			ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
 			Spec: appsv1.DeploymentSpec{
 				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Annotations: make(map[string]string),
-					},
+					ObjectMeta: metav1.ObjectMeta{Annotations: make(map[string]string)},
 				},
 			},
 		}
 	} else if rule, ok := obj.(*karov1alpha1.RestartRule); ok {
-		// Populate the rule with some data to avoid nil pointers
-		*rule = karov1alpha1.RestartRule{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      key.Name,
-				Namespace: key.Namespace,
-			},
-		}
+		*rule = karov1alpha1.RestartRule{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}}
 	}
 
 	return args.Error(0)
@@ -115,88 +98,79 @@ func (m *MockClient) Status() client.StatusWriter {
 	return m.statusWriter
 }
 
-func TestProcessRestartRules_UniqueTargets(t *testing.T) {
-	mockClient := new(MockClient)
-	mockStatusWriter, ok := mockClient.Status().(*MockStatusWriter)
-	assert.True(t, ok)
+func TestProcessRestartRules(t *testing.T) {
+	t.Parallel()
 
-	reconciler := &BaseReconciler{
-		Client:           mockClient,
-		RestartRuleStore: store.NewMemoryRestartRuleStore(),
-	}
-
-	// Define two rules targeting the same deployment
 	rule1 := &karov1alpha1.RestartRule{
 		ObjectMeta: metav1.ObjectMeta{Name: "rule1", Namespace: "default"},
-		Spec: karov1alpha1.RestartRuleSpec{
-			Targets: []karov1alpha1.TargetSpec{
-				{Kind: "Deployment", Name: "test-deployment"},
-			},
-		},
+		Spec:       karov1alpha1.RestartRuleSpec{Targets: []karov1alpha1.TargetSpec{{Kind: "Deployment", Name: "test-deployment"}}},
 	}
 	rule2 := &karov1alpha1.RestartRule{
 		ObjectMeta: metav1.ObjectMeta{Name: "rule2", Namespace: "default"},
-		Spec: karov1alpha1.RestartRuleSpec{
-			Targets: []karov1alpha1.TargetSpec{
-				{Kind: "Deployment", Name: "test-deployment"},
+		Spec:       karov1alpha1.RestartRuleSpec{Targets: []karov1alpha1.TargetSpec{{Kind: "Deployment", Name: "test-deployment"}}},
+	}
+
+	tests := []struct {
+		name                 string
+		restartRules         []*karov1alpha1.RestartRule
+		setupMocks           func(*MockClient, *MockStatusWriter)
+		expectedDeployment   int
+		expectedStatusUpdate int
+		expectedErr          bool
+	}{
+		{
+			name:                 "prevent duplicate restarts",
+			restartRules:         []*karov1alpha1.RestartRule{rule1, rule2},
+			expectedDeployment:   1,
+			expectedStatusUpdate: 2,
+			expectedErr:          false,
+			setupMocks: func(mockClient *MockClient, mockStatusWriter *MockStatusWriter) {
+				mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				mockClient.On("Update", mock.Anything, mock.AnythingOfType("*v1.Deployment")).Return(nil)
+				mockStatusWriter.On("Update", mock.Anything, mock.AnythingOfType("*v1alpha1.RestartRule")).Return(nil)
+			},
+		},
+		{
+			name:                 "handle restart failure",
+			restartRules:         []*karov1alpha1.RestartRule{rule1},
+			expectedDeployment:   1,
+			expectedStatusUpdate: 1,
+			expectedErr:          false,
+			setupMocks: func(mockClient *MockClient, mockStatusWriter *MockStatusWriter) {
+				mockClient.On("Get", mock.Anything, mock.Anything, mock.Anything).Return(nil)
+				mockClient.On("Update", mock.Anything, mock.AnythingOfType("*v1.Deployment")).Return(errUpdateFailed)
+				mockStatusWriter.On("Update", mock.Anything, mock.MatchedBy(func(rule *karov1alpha1.RestartRule) bool {
+					return len(rule.Status.RestartHistory) > 0 && rule.Status.RestartHistory[0].Status == "Failed"
+				})).Return(nil)
 			},
 		},
 	}
-	restartRules := []*karov1alpha1.RestartRule{rule1, rule2}
 
-	// Mock Get and Update calls for the deployment
-	mockClient.On("Get", mock.Anything, mock.AnythingOfType("types.NamespacedName"), mock.AnythingOfType("*v1.Deployment")).Return(nil)
-	mockClient.On("Update", mock.Anything, mock.AnythingOfType("*v1.Deployment")).Return(nil)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Mock Get and Status().Update for the RestartRule
-	mockClient.On("Get", mock.Anything, mock.AnythingOfType("types.NamespacedName"), mock.AnythingOfType("*v1alpha1.RestartRule")).Return(nil)
-	mockStatusWriter.On("Update", mock.Anything, mock.AnythingOfType("*v1alpha1.RestartRule")).Return(nil)
+			mockClient := new(MockClient)
+			mockStatusWriter := mockClient.Status().(*MockStatusWriter)
 
-	// Process the rules
-	err := reconciler.ProcessRestartRules(context.Background(), restartRules, "test-configmap", "ConfigMap")
-	assert.NoError(t, err)
+			reconciler := &BaseReconciler{
+				Client:           mockClient,
+				RestartRuleStore: store.NewMemoryRestartRuleStore(),
+			}
 
-	// Verify calls
-	mockClient.AssertNumberOfCalls(t, "Update", 1)
-	mockStatusWriter.AssertNumberOfCalls(t, "Update", 2)
-}
+			if tt.setupMocks != nil {
+				tt.setupMocks(mockClient, mockStatusWriter)
+			}
 
-func TestProcessRestartRules_RestartFailure(t *testing.T) {
-	mockClient := new(MockClient)
-	mockStatusWriter, ok := mockClient.Status().(*MockStatusWriter)
-	assert.True(t, ok)
+			err := reconciler.ProcessRestartRules(context.Background(), tt.restartRules, "test-resource", "test-type")
+			if tt.expectedErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
 
-	reconciler := &BaseReconciler{
-		Client:           mockClient,
-		RestartRuleStore: store.NewMemoryRestartRuleStore(),
+			mockClient.AssertNumberOfCalls(t, "Update", tt.expectedDeployment)
+			mockStatusWriter.AssertNumberOfCalls(t, "Update", tt.expectedStatusUpdate)
+		})
 	}
-
-	rule1 := &karov1alpha1.RestartRule{
-		ObjectMeta: metav1.ObjectMeta{Name: "rule1", Namespace: "default"},
-		Spec: karov1alpha1.RestartRuleSpec{
-			Targets: []karov1alpha1.TargetSpec{
-				{Kind: "Deployment", Name: "test-deployment"},
-			},
-		},
-	}
-	restartRules := []*karov1alpha1.RestartRule{rule1}
-
-	// Mock a failed deployment update
-	mockClient.On("Get", mock.Anything, mock.AnythingOfType("types.NamespacedName"), mock.AnythingOfType("*v1.Deployment")).Return(nil)
-	mockClient.On("Update", mock.Anything, mock.AnythingOfType("*v1.Deployment")).Return(errUpdateFailed)
-
-	// Mock Get and Status().Update for the RestartRule
-	mockClient.On("Get", mock.Anything, mock.AnythingOfType("types.NamespacedName"), mock.AnythingOfType("*v1alpha1.RestartRule")).Return(nil)
-	mockStatusWriter.On("Update", mock.Anything, mock.MatchedBy(func(rule *karov1alpha1.RestartRule) bool {
-		return len(rule.Status.RestartHistory) > 0 && rule.Status.RestartHistory[0].Status == statusFailed
-	})).Return(nil)
-
-	err := reconciler.ProcessRestartRules(context.Background(), restartRules, "test-configmap", "ConfigMap")
-	assert.NoError(t, err)
-
-	// Verify that the status of the rule reflects the failure
-	mockStatusWriter.AssertCalled(t, "Update", mock.Anything, mock.MatchedBy(func(rule *karov1alpha1.RestartRule) bool {
-		return len(rule.Status.RestartHistory) > 0 && rule.Status.RestartHistory[0].Status == statusFailed
-	}))
-	mockStatusWriter.AssertNumberOfCalls(t, "Update", 1)
 }

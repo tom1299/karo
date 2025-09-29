@@ -44,6 +44,7 @@ var _ = Describe("DelayedRestartManager", func() {
 	BeforeEach(func() {
 		manager = NewDelayedRestartManager()
 		newCtx, newCancel := context.WithCancel(context.Background())
+		//nolint:fatcontext
 		ctx = newCtx
 		cancel = newCancel
 	})
@@ -69,6 +70,7 @@ var _ = Describe("DelayedRestartManager", func() {
 
 			restartFunc := func() error {
 				atomic.StoreInt32(&executed, 1)
+
 				return nil
 			}
 
@@ -98,6 +100,7 @@ var _ = Describe("DelayedRestartManager", func() {
 
 			restartFunc := func() error {
 				atomic.StoreInt32(&executed, 1)
+
 				return nil
 			}
 
@@ -152,6 +155,7 @@ var _ = Describe("DelayedRestartManager", func() {
 
 			restartFunc := func() error {
 				atomic.StoreInt32(&executed, 1)
+
 				return nil
 			}
 
@@ -197,6 +201,7 @@ var _ = Describe("DelayedRestartManager", func() {
 
 			restartFunc := func() error {
 				atomic.StoreInt32(&executed, 1)
+
 				return nil
 			}
 
@@ -236,6 +241,7 @@ var _ = Describe("DelayedRestartManager", func() {
 
 			restartFunc := func() error {
 				atomic.AddInt32(&executeCount, 1)
+
 				return nil
 			}
 
@@ -270,6 +276,7 @@ var _ = Describe("DelayedRestartManager", func() {
 
 			restartFunc := func() error {
 				atomic.StoreInt32(&executed, 1)
+
 				return nil
 			}
 
@@ -340,10 +347,12 @@ var _ = Describe("DelayedRestartManager", func() {
 
 			restartFunc1 := func() error {
 				atomic.StoreInt32(&executed1, 1)
+
 				return nil
 			}
 			restartFunc2 := func() error {
 				atomic.StoreInt32(&executed2, 1)
+
 				return nil
 			}
 
@@ -382,6 +391,7 @@ var _ = Describe("DelayedRestartManager", func() {
 
 			restartFunc := func() error {
 				atomic.StoreInt32(&executed, 1)
+
 				return nil
 			}
 
@@ -416,7 +426,7 @@ var _ = Describe("DelayedRestartManager", func() {
 				},
 			}
 
-			restartFunc := func() error {
+			restartFunc := func() error { //nolint:unparam
 				atomic.AddInt32(&executed, 1)
 
 				return nil
@@ -424,7 +434,7 @@ var _ = Describe("DelayedRestartManager", func() {
 
 			var wg sync.WaitGroup
 			// Try to schedule the same restart from multiple goroutines
-			for i := 0; i < numGoroutines; i++ {
+			for range numGoroutines {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()

@@ -35,6 +35,8 @@ import (
 )
 
 // TestProcessRestartRules_EdgeCases tests various edge cases for the delay restart integration
+//
+//nolint:gocognit,cyclop,maintidx
 func TestProcessRestartRules_EdgeCases(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
@@ -354,14 +356,15 @@ func TestProcessRestartRules_ConcurrentExecution(t *testing.T) {
 	var deployments []runtime.Object
 	var rules []*karov1alpha1.RestartRule
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		deployName := fmt.Sprintf("app%d", i)
 		ruleName := fmt.Sprintf("rule%d", i)
 
 		deployment := createTestDeployment(deployName, "default")
 		deployments = append(deployments, deployment)
 
-		delayValue := int32(i * 5)
+		// TODO: How to do type safe int32 conversion?
+		delayValue := int32(i * 5) //nolint:gosec // disable G115
 		rule := createTestRestartRule(ruleName, int32Ptr(delayValue), deployName)
 		rules = append(rules, rule)
 	}
@@ -385,7 +388,7 @@ func TestProcessRestartRules_ConcurrentExecution(t *testing.T) {
 	var wg sync.WaitGroup
 	errChan := make(chan error, 5)
 
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		wg.Add(1)
 		go func(goroutineID int) {
 			defer wg.Done()
@@ -467,6 +470,7 @@ func TestProcessRestartRules_RestartFunctionFailures(t *testing.T) {
 			name: "deployment not found",
 			setup: func() (*karov1alpha1.RestartRule, []runtime.Object) {
 				rule := createTestRestartRule("rule1", int32Ptr(5), "nonexistent-app")
+
 				return rule, []runtime.Object{rule} // No deployment created
 			},
 			expectError: true,
@@ -477,6 +481,7 @@ func TestProcessRestartRules_RestartFunctionFailures(t *testing.T) {
 			setup: func() (*karov1alpha1.RestartRule, []runtime.Object) {
 				rule := createTestRestartRule("rule1", int32Ptr(5), "app1")
 				deployment := createTestDeployment("app1", "wrong-namespace")
+
 				return rule, []runtime.Object{rule, deployment}
 			},
 			expectError: true,
@@ -487,6 +492,7 @@ func TestProcessRestartRules_RestartFunctionFailures(t *testing.T) {
 			setup: func() (*karov1alpha1.RestartRule, []runtime.Object) {
 				rule := createTestRestartRule("rule1", int32Ptr(5), "app1")
 				deployment := createTestDeployment("app1", "default")
+
 				return rule, []runtime.Object{rule, deployment}
 			},
 			expectError: false,

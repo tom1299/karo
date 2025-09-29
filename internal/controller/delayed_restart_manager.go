@@ -66,6 +66,8 @@ type DelayedRestartManagerImpl struct {
 }
 
 // NewDelayedRestartManager creates a new DelayedRestartManager
+//
+//nolint:ireturn
 func NewDelayedRestartManager() DelayedRestartManager {
 	return &DelayedRestartManagerImpl{
 		pendingTasks: make(map[string]*restartTask),
@@ -138,6 +140,7 @@ func (m *DelayedRestartManagerImpl) Stop() {
 
 	if m.stopped {
 		m.mu.Unlock()
+
 		return
 	}
 

@@ -34,6 +34,8 @@ import (
 )
 
 // TestDelayRestartIntegration tests the full flow from ConfigMap change to delayed restart
+//
+//nolint:cyclop,gocognit,maintidx
 func TestDelayRestartIntegration(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
@@ -424,6 +426,8 @@ func TestSecretDelayRestartIntegration(t *testing.T) {
 }
 
 // TestDelayRestartStatusIntegration tests that status events are recorded correctly during delayed restarts
+//
+//nolint:cyclop
 func TestDelayRestartStatusIntegration(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
@@ -535,7 +539,7 @@ func TestDelayRestartStatusIntegration(t *testing.T) {
 		t.Errorf("Expected 1 restart event, got %d", len(updatedRule.Status.RestartHistory))
 	}
 
-	if len(updatedRule.Status.RestartHistory) > 0 {
+	if len(updatedRule.Status.RestartHistory) > 0 { //nolint:nestif
 		event := updatedRule.Status.RestartHistory[0]
 
 		// Verify event details

@@ -60,6 +60,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
@@ -118,8 +119,6 @@ func setupDelayTestEnvironment(ctx context.Context, t *testing.T, clients *testC
 		createTestConfigMap("test-config-1"),
 		createTestConfigMap("test-config-2"),
 		createTestConfigMap("test-config-multi-1"),
-		createTestConfigMap("test-config-multi-2"),
-		createTestConfigMap("test-config-multi-3"),
 		createTestConfigMap("test-config-mixed-1"),
 		createTestConfigMap("test-config-mixed-2"),
 		createTestConfigMap("test-config-dup"),
@@ -158,6 +157,8 @@ func setupDelayTestEnvironment(ctx context.Context, t *testing.T, clients *testC
 }
 
 // testBasicDelayRestart tests basic delay functionality
+//
+//nolint:cyclop
 func testBasicDelayRestart(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("=== Testing Basic Delay Restart Functionality ===")
 
@@ -173,6 +174,7 @@ func testBasicDelayRestart(ctx context.Context, t *testing.T, clients *testClien
 			t.Fatalf("Failed to create delay RestartRule: %v", err)
 		}
 		defer cleanupRestartRule(ctx, t, clients.k8sClient, ruleName)
+		defer removeRestartAnnotation(ctx, t, clients.k8sClient, delayTestNamespace, "test-app")
 
 		if err := waitForRestartRuleReady(ctx, clients.k8sClient, delayTestNamespace, ruleName); err != nil {
 			t.Fatalf("DelayRestart rule did not become ready: %v", err)
@@ -218,6 +220,7 @@ func testBasicDelayRestart(ctx context.Context, t *testing.T, clients *testClien
 			t.Fatalf("Failed to create zero-delay RestartRule: %v", err)
 		}
 		defer cleanupRestartRule(ctx, t, clients.k8sClient, ruleName)
+		defer removeRestartAnnotation(ctx, t, clients.k8sClient, delayTestNamespace, "test-app")
 
 		if err := waitForRestartRuleReady(ctx, clients.k8sClient, delayTestNamespace, ruleName); err != nil {
 			t.Fatalf("Zero-delay rule did not become ready: %v", err)
@@ -249,6 +252,8 @@ func testBasicDelayRestart(ctx context.Context, t *testing.T, clients *testClien
 }
 
 // testMultipleRulesDelayPriority tests delay priority with multiple rules
+//
+//nolint:gocognit,cyclop
 func testMultipleRulesDelayPriority(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("=== Testing Multiple Rules Delay Priority ===")
 
@@ -262,8 +267,8 @@ func testMultipleRulesDelayPriority(ctx context.Context, t *testing.T, clients *
 
 		// Create rules with different delays for the same target
 		rule1 := createDelayRestartRule(rule1Name, 3, "test-config-multi-1", "Deployment", "test-app")
-		rule2 := createDelayRestartRule(rule2Name, 8, "test-config-multi-2", "Deployment", "test-app")
-		rule3 := createDelayRestartRule(rule3Name, 5, "test-config-multi-3", "Deployment", "test-app")
+		rule2 := createDelayRestartRule(rule2Name, 8, "test-config-multi-1", "Deployment", "test-app")
+		rule3 := createDelayRestartRule(rule3Name, 5, "test-config-multi-1", "Deployment", "test-app")
 
 		for _, rule := range []*karov1alpha1.RestartRule{rule1, rule2, rule3} {
 			if err := clients.k8sClient.Create(ctx, rule); err != nil {
@@ -271,6 +276,8 @@ func testMultipleRulesDelayPriority(ctx context.Context, t *testing.T, clients *
 			}
 			defer cleanupRestartRule(ctx, t, clients.k8sClient, rule.Name)
 		}
+
+		defer removeRestartAnnotation(ctx, t, clients.k8sClient, delayTestNamespace, "test-app")
 
 		// Wait for all rules to be ready
 		for _, ruleName := range []string{rule1Name, rule2Name, rule3Name} {
@@ -281,7 +288,8 @@ func testMultipleRulesDelayPriority(ctx context.Context, t *testing.T, clients *
 
 		// Update all ConfigMaps simultaneously to trigger all rules
 		startTime := time.Now()
-		for i, configName := range []string{"test-config-multi-1", "test-config-multi-2", "test-config-multi-3"} {
+		// TODO: Remove loop
+		for i, configName := range []string{"test-config-multi-1"} {
 			configMap := &corev1.ConfigMap{}
 			key := client.ObjectKey{Namespace: delayTestNamespace, Name: configName}
 			if err := clients.k8sClient.Get(ctx, key, configMap); err != nil {
@@ -306,7 +314,8 @@ func testMultipleRulesDelayPriority(ctx context.Context, t *testing.T, clients *
 			t.Errorf("Restart took too long: %v (expected ~8s delay)", elapsed)
 		}
 
-		t.Logf("SUCCESS: Highest delay (8s) was applied, restart completed after %v with restart time: %s", elapsed, restartTime)
+		t.Logf("SUCCESS: Highest delay (8s) was applied, restart completed after"+
+			" %v with restart time: %s", elapsed, restartTime)
 	})
 
 	// Test 2: Mixed delay and no-delay rules - delay should take precedence
@@ -326,6 +335,8 @@ func testMultipleRulesDelayPriority(ctx context.Context, t *testing.T, clients *
 			}
 			defer cleanupRestartRule(ctx, t, clients.k8sClient, rule.Name)
 		}
+
+		defer removeRestartAnnotation(ctx, t, clients.k8sClient, delayTestNamespace, "test-app")
 
 		// Wait for both rules to be ready
 		for _, ruleName := range []string{delayRuleName, noDelayRuleName} {
@@ -361,11 +372,14 @@ func testMultipleRulesDelayPriority(ctx context.Context, t *testing.T, clients *
 			t.Errorf("Restart took too long: %v (expected ~6s delay)", elapsed)
 		}
 
-		t.Logf("SUCCESS: Delay rule took precedence over no-delay rule, restart completed after %v with restart time: %s", elapsed, restartTime)
+		t.Logf("SUCCESS: Delay rule took precedence over no-delay rule, restart completed after"+
+			" %v with restart time: %s", elapsed, restartTime)
 	})
 }
 
 // testDuplicateRestartPrevention tests duplicate restart prevention
+//
+//nolint:gocognit,cyclop
 func testDuplicateRestartPrevention(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("=== Testing Duplicate Restart Prevention ===")
 
@@ -380,6 +394,7 @@ func testDuplicateRestartPrevention(ctx context.Context, t *testing.T, clients *
 			t.Fatalf("Failed to create duplicate prevention RestartRule: %v", err)
 		}
 		defer cleanupRestartRule(ctx, t, clients.k8sClient, ruleName)
+		defer removeRestartAnnotation(ctx, t, clients.k8sClient, delayTestNamespace, "test-app")
 
 		if err := waitForRestartRuleReady(ctx, clients.k8sClient, delayTestNamespace, ruleName); err != nil {
 			t.Fatalf("Duplicate prevention rule did not become ready: %v", err)
@@ -422,7 +437,8 @@ func testDuplicateRestartPrevention(ctx context.Context, t *testing.T, clients *
 
 		// Wait for the original delayed restart to complete
 		startTime := time.Now()
-		finalRestartTime := waitForDelayedDeploymentRestart(ctx, t, clients.k8sClient, initialRestartAnnotation, "Duplicate prevention test")
+		finalRestartTime := waitForDelayedDeploymentRestart(ctx, t, clients.k8sClient, initialRestartAnnotation,
+			"Duplicate prevention test")
 		elapsed := time.Since(startTime)
 
 		// Should still take around 10 seconds (from first trigger, not second)
@@ -460,6 +476,8 @@ func testDuplicateRestartPrevention(ctx context.Context, t *testing.T, clients *
 }
 
 // testDelayIntegration tests delay functionality with ConfigMap and Secret changes
+//
+//nolint:cyclop
 func testDelayIntegration(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("=== Testing Delay Integration with ConfigMap and Secret Changes ===")
 
@@ -475,6 +493,7 @@ func testDelayIntegration(ctx context.Context, t *testing.T, clients *testClient
 			t.Fatalf("Failed to create ConfigMap integration RestartRule: %v", err)
 		}
 		defer cleanupRestartRule(ctx, t, clients.k8sClient, ruleName)
+		defer removeRestartAnnotation(ctx, t, clients.k8sClient, delayTestNamespace, "test-app")
 
 		if err := waitForRestartRuleReady(ctx, clients.k8sClient, delayTestNamespace, ruleName); err != nil {
 			t.Fatalf("ConfigMap integration rule did not become ready: %v", err)
@@ -520,6 +539,7 @@ func testDelayIntegration(ctx context.Context, t *testing.T, clients *testClient
 			t.Fatalf("Failed to create Secret integration RestartRule: %v", err)
 		}
 		defer cleanupRestartRule(ctx, t, clients.k8sClient, ruleName)
+		defer removeRestartAnnotation(ctx, t, clients.k8sClient, delayTestNamespace, "test-app")
 
 		if err := waitForRestartRuleReady(ctx, clients.k8sClient, delayTestNamespace, ruleName); err != nil {
 			t.Fatalf("Secret integration rule did not become ready: %v", err)
@@ -555,6 +575,8 @@ func testDelayIntegration(ctx context.Context, t *testing.T, clients *testClient
 }
 
 // testDelayEdgeCases tests edge cases for delay functionality
+//
+//nolint:cyclop
 func testDelayEdgeCases(ctx context.Context, t *testing.T, clients *testClients) {
 	t.Log("=== Testing Delay Edge Cases ===")
 
@@ -570,6 +592,7 @@ func testDelayEdgeCases(ctx context.Context, t *testing.T, clients *testClients)
 			t.Fatalf("Failed to create short delay RestartRule: %v", err)
 		}
 		defer cleanupRestartRule(ctx, t, clients.k8sClient, ruleName)
+		defer removeRestartAnnotation(ctx, t, clients.k8sClient, delayTestNamespace, "test-app")
 
 		if err := waitForRestartRuleReady(ctx, clients.k8sClient, delayTestNamespace, ruleName); err != nil {
 			t.Fatalf("Short delay rule did not become ready: %v", err)
@@ -609,6 +632,7 @@ func testDelayEdgeCases(ctx context.Context, t *testing.T, clients *testClients)
 			t.Fatalf("Failed to create longer delay RestartRule: %v", err)
 		}
 		defer cleanupRestartRule(ctx, t, clients.k8sClient, ruleName)
+		defer removeRestartAnnotation(ctx, t, clients.k8sClient, delayTestNamespace, "test-app")
 
 		if err := waitForRestartRuleReady(ctx, clients.k8sClient, delayTestNamespace, ruleName); err != nil {
 			t.Fatalf("Longer delay rule did not become ready: %v", err)
@@ -668,6 +692,7 @@ func createTestSecret(name string) *corev1.Secret {
 // createDelayTestDeployment creates a test Deployment for delay tests
 func createDelayTestDeployment() *appsv1.Deployment {
 	replicas := int32(1)
+
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-app",
@@ -706,7 +731,10 @@ func createDelayTestDeployment() *appsv1.Deployment {
 }
 
 // createDelayRestartRule creates a RestartRule with delayRestart for ConfigMap changes
-func createDelayRestartRule(name string, delaySeconds int32, configMapName, targetKind, targetName string) *karov1alpha1.RestartRule {
+//
+//nolint:unparam
+func createDelayRestartRule(name string, delaySeconds int32, configMapName,
+	targetKind, targetName string) *karov1alpha1.RestartRule {
 	return &karov1alpha1.RestartRule{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -732,7 +760,8 @@ func createDelayRestartRule(name string, delaySeconds int32, configMapName, targ
 }
 
 // createDelaySecretRestartRule creates a RestartRule with delayRestart for Secret changes
-func createDelaySecretRestartRule(name string, delaySeconds int32, secretName, targetKind, targetName string) *karov1alpha1.RestartRule {
+func createDelaySecretRestartRule(name string, delaySeconds int32, secretName,
+	targetKind, targetName string) *karov1alpha1.RestartRule {
 	return &karov1alpha1.RestartRule{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -778,7 +807,8 @@ func waitForDelayedDeploymentRestart(
 		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
 			if currentRestartTime, exists := annotations[restartAnnotation]; exists {
 				if previousRestartTime == "" || currentRestartTime != previousRestartTime {
-					t.Logf("Found restart annotation after %s: %s = %s", resourceType, restartAnnotation, currentRestartTime)
+					t.Logf("Found restart annotation after %s: %s = %s", resourceType,
+						restartAnnotation, currentRestartTime)
 					restartTime = currentRestartTime
 
 					return true, nil
@@ -838,7 +868,7 @@ func cleanupDelayTest(ctx context.Context, t *testing.T, clients *testClients) {
 func cleanupDelayTestResources(ctx context.Context, t *testing.T, k8sClient client.Client) {
 	// Create lists of all possible test resources to clean up
 	testConfigMaps := []string{
-		"test-config-1", "test-config-2", "test-config-multi-1", "test-config-multi-2", "test-config-multi-3",
+		"test-config-1", "test-config-2", "test-config-multi-1",
 		"test-config-mixed-1", "test-config-mixed-2", "test-config-dup", "test-config-integration",
 		"test-config-short", "test-config-longer",
 	}
@@ -879,4 +909,36 @@ func cleanupDelayTestResources(ctx context.Context, t *testing.T, k8sClient clie
 	deleteResource(ctx, t, k8sClient, deployment, "Deployment")
 
 	time.Sleep(2 * time.Second) // Allow time for resource cleanup
+}
+
+//nolint:unparam
+func removeRestartAnnotation(ctx context.Context, t *testing.T, k8sClient client.Client,
+	namespace, deploymentName string) {
+	t.Logf("Removing restart annotation from deployment %s/%s...", namespace, deploymentName)
+
+	deployment := &appsv1.Deployment{}
+	key := client.ObjectKey{Namespace: namespace, Name: deploymentName}
+	if err := k8sClient.Get(ctx, key, deployment); err != nil {
+		t.Fatalf("Failed to get deployment: %v", err)
+	}
+
+	restartAnnotation := "karo.jeeatwork.com/restartedAt"
+	if annotations := deployment.Spec.Template.Annotations; annotations != nil {
+		if _, exists := annotations[restartAnnotation]; exists {
+			delete(annotations, restartAnnotation)
+			deployment.Spec.Template.Annotations = annotations
+
+			// TODO: Examine why only patching with a raw patch works reliably here
+			patch := client.RawPatch(types.JSONPatchType, []byte(
+				`[{"op": "remove", "path": "/spec/template/metadata/annotations/karo.jeeatwork.com~1restartedAt"}]`))
+
+			if err := k8sClient.Patch(ctx, deployment, patch); err != nil {
+				t.Fatalf("Failed to update deployment to remove restart annotation: %v", err)
+			}
+
+			t.Logf("Successfully removed restart annotation from deployment %s/%s", namespace, deploymentName)
+		}
+	} else {
+		t.Logf("No annotations found on deployment %s/%s", namespace, deploymentName)
+	}
 }

@@ -53,6 +53,7 @@ func isValidTransition(from, to string) bool {
 
 // updateStatus updates the status of a RestartRule, ensuring valid phase transitions.
 func (r *RestartRuleReconciler) updateStatus(ctx context.Context, rule *karov1alpha1.RestartRule, newPhase string, reason string, message string) error {
+
 	if !isValidTransition(rule.Status.Phase, newPhase) {
 		return fmt.Errorf("%w: from %q to %q", errInvalidPhaseTransition, rule.Status.Phase, newPhase)
 	}
@@ -66,10 +67,11 @@ func (r *RestartRuleReconciler) updateStatus(ctx context.Context, rule *karov1al
 	}
 
 	meta.SetStatusCondition(&rule.Status.Conditions, metav1.Condition{
-		Type:    "Ready",
-		Status:  readyStatus,
-		Reason:  reason,
-		Message: message,
+		Type:               "Ready",
+		Status:             readyStatus,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: rule.Generation,
 	})
 
 	validStatus := metav1.ConditionTrue
@@ -78,11 +80,13 @@ func (r *RestartRuleReconciler) updateStatus(ctx context.Context, rule *karov1al
 	}
 
 	meta.SetStatusCondition(&rule.Status.Conditions, metav1.Condition{
-		Type:    "Valid",
-		Status:  validStatus,
-		Reason:  reason,
-		Message: message,
+		Type:               "Valid",
+		Status:             validStatus,
+		Reason:             reason,
+		Message:            message,
+		ObservedGeneration: rule.Generation,
 	})
 
+	// return r.Status().Patch(ctx, rule, client.MergeFrom(rule.DeepCopy()))
 	return r.Status().Update(ctx, rule)
 }

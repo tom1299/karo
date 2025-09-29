@@ -46,6 +46,7 @@ type RestartRuleReconciler struct {
 
 func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
+
 	log.V(1).Info("Reconciling RestartRule", "name", req.Name, "namespace", req.Namespace)
 
 	var rule karov1alpha1.RestartRule
@@ -61,6 +62,14 @@ func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		log.Error(err, "Failed to get RestartRule")
 
 		return ctrl.Result{}, err
+	}
+
+	conditions := rule.Status.Conditions
+	conditionCount := len(conditions)
+	if conditionCount > 0 && rule.Status.Conditions[conditionCount-1].ObservedGeneration == rule.GetGeneration() {
+		log.V(1).Info("Only status update", "name", req.Name, "namespace", req.Namespace)
+
+		return ctrl.Result{}, nil
 	}
 
 	// Set initial phase if not set

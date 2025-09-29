@@ -135,6 +135,7 @@ func createTestScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = karov1alpha1.AddToScheme(scheme)
+
 	return scheme
 }
 
@@ -178,6 +179,7 @@ func createTestRestartRule(name string, delayRestart *int32, targetName string) 
 	}
 }
 
+//nolint:cyclop,gocognit
 func TestProcessRestartRules_DelayLogic(t *testing.T) {
 	scheme := createTestScheme()
 
@@ -331,6 +333,7 @@ func TestProcessRestartRules_DelayLogic(t *testing.T) {
 	}
 }
 
+//nolint:cyclop
 func TestProcessRestartRules_TargetGrouping(t *testing.T) {
 	scheme := createTestScheme()
 
@@ -374,7 +377,8 @@ func TestProcessRestartRules_TargetGrouping(t *testing.T) {
 	// Verify that app2 target gets its delay (15s)
 	foundApp1, foundApp2 := false, false
 	for _, args := range scheduleArgs {
-		if args.TargetKey == "Deployment/default/app1" {
+		// TODO: Use switch
+		if args.TargetKey == "Deployment/default/app1" { //nolint:nestif,staticcheck
 			foundApp1 = true
 			if args.MaxDelay != 10*time.Second {
 				t.Errorf("app1 target: expected delay 10s, got %v", args.MaxDelay)
@@ -485,6 +489,7 @@ func TestProcessRestartRules_RestartFailure(t *testing.T) {
 	}
 }
 
+//nolint:cyclop
 func TestProcessRestartRules_StatusRecording(t *testing.T) {
 	scheme := createTestScheme()
 

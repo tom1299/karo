@@ -353,8 +353,8 @@ func TestProcessRestartRules_ConcurrentExecution(t *testing.T) {
 	ctx := context.Background()
 
 	// Create multiple deployments and rules
-	var deployments []runtime.Object
-	var rules []*karov1alpha1.RestartRule
+	var deployments []runtime.Object      //nolint:prealloc
+	var rules []*karov1alpha1.RestartRule //nolint:prealloc
 
 	for i := range 10 {
 		deployName := fmt.Sprintf("app%d", i)

@@ -76,6 +76,9 @@ func SetupManager(opts *SetupOptions) (ctrl.Manager, error) {
 	// Create shared store
 	restartRuleStore := store.NewMemoryRestartRuleStore()
 
+	// Create DelayedRestartManager
+	delayedRestartManager := controller.NewDelayedRestartManager()
+
 	// Setup RestartRule controller
 	if err := (&controller.RestartRuleReconciler{
 		Client:           mgr.GetClient(),
@@ -88,8 +91,9 @@ func SetupManager(opts *SetupOptions) (ctrl.Manager, error) {
 	// Setup ConfigMap controller
 	if err := (&controller.ConfigMapReconciler{
 		BaseReconciler: controller.BaseReconciler{
-			Client:           mgr.GetClient(),
-			RestartRuleStore: restartRuleStore,
+			Client:                mgr.GetClient(),
+			RestartRuleStore:      restartRuleStore,
+			DelayedRestartManager: delayedRestartManager,
 		},
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
@@ -99,8 +103,9 @@ func SetupManager(opts *SetupOptions) (ctrl.Manager, error) {
 	// Setup Secret controller
 	if err := (&controller.SecretReconciler{
 		BaseReconciler: controller.BaseReconciler{
-			Client:           mgr.GetClient(),
-			RestartRuleStore: restartRuleStore,
+			Client:                mgr.GetClient(),
+			RestartRuleStore:      restartRuleStore,
+			DelayedRestartManager: delayedRestartManager,
 		},
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {

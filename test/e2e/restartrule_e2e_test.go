@@ -33,6 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 )
 
+const restartAnnotation = "karo.jeeatwork.com/restartedAt"
+
 func TestRestartRuleE2E(t *testing.T) {
 	ctx := context.Background()
 	clients := setupTestClients(t)
@@ -223,7 +225,6 @@ func waitForDeploymentRestart(
 			return false, err
 		}
 
-		restartAnnotation := "karo.jeeatwork.com/restartedAt"
 		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
 			if currentRestartTime, exists := annotations[restartAnnotation]; exists {
 				if previousRestartTime == "" || currentRestartTime != previousRestartTime {
@@ -448,7 +449,7 @@ func testRegexMultipleResources(ctx context.Context, t *testing.T, clients *test
 
 	var previousRestartTime string
 	if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
-		previousRestartTime = annotations["karo.jeeatwork.com/restartedAt"]
+		previousRestartTime = annotations[restartAnnotation]
 	}
 
 	t.Log("Updating ConfigMap that does NOT match regex pattern...")
@@ -468,7 +469,7 @@ func testRegexMultipleResources(ctx context.Context, t *testing.T, clients *test
 
 	var currentRestartTime string
 	if annotations := updatedDeployment.Spec.Template.Annotations; annotations != nil {
-		currentRestartTime = annotations["karo.jeeatwork.com/restartedAt"]
+		currentRestartTime = annotations[restartAnnotation]
 	}
 
 	if currentRestartTime != previousRestartTime {
@@ -494,7 +495,6 @@ func checkDeploymentRestarted(
 			return false, err
 		}
 
-		restartAnnotation := "karo.jeeatwork.com/restartedAt"
 		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
 			if _, exists := annotations[restartAnnotation]; exists {
 				t.Logf("Found restart annotation after %s update: %s = %s",

@@ -118,6 +118,16 @@ spec:
                   type: object
                 minItems: 1
                 type: array
+              delayRestart:
+                description: |-
+                  DelayRestart specifies the number of seconds to wait before triggering a restart
+                  after a change is detected. If not specified, restarts are triggered immediately.
+                  When multiple RestartRules with different delays target the same workload, the
+                  highest delay value is used to ensure all rules' delay requirements are met.
+                format: int32
+                maximum: 3600
+                minimum: 0
+                type: integer
               targets:
                 description: Targets defines the resources to restart when changes
                   are detected

@@ -223,11 +223,11 @@ func waitForDeploymentRestart(
 			return false, err
 		}
 
-		restartAnnotation := "karo.jeeatwork.com/restartedAt"
+		restartAnnotationKey := "karo.jeeatwork.com/restartedAt"
 		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
-			if currentRestartTime, exists := annotations[restartAnnotation]; exists {
+			if currentRestartTime, exists := annotations[restartAnnotationKey]; exists {
 				if previousRestartTime == "" || currentRestartTime != previousRestartTime {
-					t.Logf("Found restart annotation after %s update: %s = %s", resourceType, restartAnnotation, currentRestartTime)
+					t.Logf("Found restart annotation after %s update: %s = %s", resourceType, restartAnnotationKey, currentRestartTime)
 					restartTime = currentRestartTime
 
 					return true, nil
@@ -257,6 +257,7 @@ func validateTestResults(t *testing.T, configMapRestartTime, secretRestartTime s
 	t.Logf("=== Test completed successfully ===")
 	t.Logf("ConfigMap restart time: %s", configMapRestartTime)
 	t.Logf("Secret restart time: %s", secretRestartTime)
+
 	t.Log("Both ConfigMap and Secret updates successfully triggered deployment restarts")
 }
 
@@ -494,11 +495,11 @@ func checkDeploymentRestarted(
 			return false, err
 		}
 
-		restartAnnotation := "karo.jeeatwork.com/restartedAt"
+		restartAnnotationKey := "karo.jeeatwork.com/restartedAt"
 		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
-			if _, exists := annotations[restartAnnotation]; exists {
+			if _, exists := annotations[restartAnnotationKey]; exists {
 				t.Logf("Found restart annotation after %s update: %s = %s",
-					resourceType, restartAnnotation, annotations[restartAnnotation])
+					resourceType, restartAnnotationKey, annotations[restartAnnotationKey])
 
 				return true, nil
 			}

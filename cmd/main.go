@@ -19,7 +19,6 @@ package main
 import (
 	"flag"
 	"os"
-
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -31,6 +30,9 @@ var (
 )
 
 func main() {
+	var minimumDelay int
+	flag.IntVar(&minimumDelay, "minimum-delay", 0, "Minimum delay for workload restarts in seconds")
+
 	opts := zap.Options{
 		Development: true,
 	}
@@ -39,7 +41,10 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := manager.SetupManager(nil)
+	controllerOpts := manager.DefaultSetupOptions()
+	controllerOpts.MinimumDelay = int32(minimumDelay)
+
+	mgr, err := manager.SetupManager(controllerOpts)
 	if err != nil {
 		setupLog.Error(err, "unable to setup manager")
 		os.Exit(1)

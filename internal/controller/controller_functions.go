@@ -48,6 +48,7 @@ type BaseReconciler struct {
 	RestartRuleStore      store.RestartRuleStore
 	DelayedRestartManager DelayedRestartManager
 	operationType         store.OperationType
+	MinimumDelay          int32
 }
 
 // targetKey uniquely identifies a deployment target

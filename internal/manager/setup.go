@@ -24,6 +24,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
@@ -33,9 +34,12 @@ import (
 
 // SetupOptions contains options for setting up the manager
 type SetupOptions struct {
+	zap.Options
+
 	MetricsAddr        string
 	Scheme             *runtime.Scheme
 	SkipNameValidation bool
+	MinimumDelay       int32
 }
 
 // DefaultSetupOptions returns default setup options
@@ -48,6 +52,7 @@ func DefaultSetupOptions() *SetupOptions {
 		MetricsAddr:        "0", // disable metrics by default
 		Scheme:             scheme,
 		SkipNameValidation: false,
+		MinimumDelay:       0,
 	}
 }
 
@@ -94,6 +99,7 @@ func SetupManager(opts *SetupOptions) (ctrl.Manager, error) {
 			Client:                mgr.GetClient(),
 			RestartRuleStore:      restartRuleStore,
 			DelayedRestartManager: delayedRestartManager,
+			MinimumDelay:          opts.MinimumDelay,
 		},
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
@@ -106,6 +112,7 @@ func SetupManager(opts *SetupOptions) (ctrl.Manager, error) {
 			Client:                mgr.GetClient(),
 			RestartRuleStore:      restartRuleStore,
 			DelayedRestartManager: delayedRestartManager,
+			MinimumDelay:          opts.MinimumDelay,
 		},
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {

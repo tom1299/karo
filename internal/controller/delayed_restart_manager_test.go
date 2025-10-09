@@ -20,12 +20,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-logr/logr"
+	stdr "github.com/go-logr/stdr"
 )
 
 // add a package-level static error to satisfy lint rule err113 (do not define dynamic errors)
@@ -527,8 +530,10 @@ func TestDelayedRestartManager_RestartFuncError(t *testing.T) {
 func TestDelayedRestartManager_ConcurrentScheduling(t *testing.T) {
 	t.Parallel()
 
-	logger := logr.Discard()
+	// TODO: Use stdout logger for all test cases
+	logger := stdr.New(log.New(os.Stdout, "", log.LstdFlags))
 	manager := NewDelayedRestartManager(logger)
+
 	defer manager.Shutdown()
 
 	ctx := context.Background()
@@ -569,8 +574,8 @@ func TestDelayedRestartManager_ConcurrentScheduling(t *testing.T) {
 		t.Error("IsScheduled() returned false after concurrent scheduling")
 	}
 
-	// Wait for execution
-	time.Sleep(200 * time.Millisecond)
+	// Maximum delay used should be 90ms (from the last goroutine)
+	time.Sleep(100 * time.Millisecond)
 
 	// Should have executed only once
 	if count := executionCount.Load(); count != 1 {

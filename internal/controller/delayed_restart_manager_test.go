@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -26,6 +27,11 @@ import (
 
 	"github.com/go-logr/logr"
 )
+
+// add a package-level static error to satisfy lint rule err113 (do not define dynamic errors)
+var errTaskCtxTimeout = errors.New("timeout waiting for taskCtx to be Done")
+
+// TODO: Make these tests easier with regards to channel usage and timeouts
 
 func TestNewDelayedRestartManager(t *testing.T) {
 	t.Parallel()
@@ -125,11 +131,11 @@ func TestDelayedRestartManager_ScheduleRestart_Delayed(t *testing.T) {
 	finalDelay, isNew, err := manager.ScheduleRestart(ctx, target, delay, restartFunc)
 
 	if err != nil {
-		t.Errorf("ScheduleRestart() returned error: %v", err)
+		t.Errorf("ScheduleRestart() with delay=1s returned error: %v", err)
 	}
 
 	if !isNew {
-		t.Error("ScheduleRestart() should return isNew=true")
+		t.Error("ScheduleRestart() with delay=1s should return isNew=true")
 	}
 
 	if finalDelay != delay {
@@ -163,7 +169,7 @@ func TestDelayedRestartManager_ScheduleRestart_Delayed(t *testing.T) {
 }
 
 //nolint:cyclop // Test function complexity is acceptable for comprehensive testing
-func TestDelayedRestartManager_ScheduleRestart_MultipleRulesHighestDelayWins(t *testing.T) {
+func TestDelayedRestartManager_ScheduleRestart_MultipleRulesNoReshedule(t *testing.T) {
 	t.Parallel()
 
 	logger := logr.Discard()
@@ -181,10 +187,7 @@ func TestDelayedRestartManager_ScheduleRestart_MultipleRulesHighestDelayWins(t *
 	var executionCount atomic.Int32
 	restartFunc := func(ctx context.Context) error {
 		executionCount.Add(1)
-		select {
-		case executed <- struct{}{}:
-		default:
-		}
+		executed <- struct{}{}
 
 		return nil
 	}
@@ -202,30 +205,30 @@ func TestDelayedRestartManager_ScheduleRestart_MultipleRulesHighestDelayWins(t *
 		t.Errorf("First ScheduleRestart() returned finalDelay=%v, want %v", finalDelay1, delay1)
 	}
 
-	// Schedule with higher delay 200ms - should reschedule
+	// Schedule again with a higher delay (200ms) - should keep the original 100ms
 	delay2 := 200 * time.Millisecond
 	finalDelay2, isNew2, err2 := manager.ScheduleRestart(ctx, target, delay2, restartFunc)
 	if err2 != nil {
 		t.Errorf("Second ScheduleRestart() returned error: %v", err2)
 	}
-	if !isNew2 {
-		t.Error("Second ScheduleRestart() with higher delay should return isNew=true (rescheduled)")
+	if isNew2 {
+		t.Error("Second ScheduleRestart() should return isNew=false when already scheduled")
 	}
-	if finalDelay2 != delay2 {
-		t.Errorf("Second ScheduleRestart() returned finalDelay=%v, want %v", finalDelay2, delay2)
+	if finalDelay2 != delay1 {
+		t.Errorf("Second ScheduleRestart() returned finalDelay=%v, want %v (existing delay)", finalDelay2, delay1)
 	}
 
-	// Schedule with lower delay 50ms - should keep existing higher delay
+	// Schedule again with a shorter delay (50ms) - should keep the original 100ms
 	delay3 := 50 * time.Millisecond
 	finalDelay3, isNew3, err3 := manager.ScheduleRestart(ctx, target, delay3, restartFunc)
 	if err3 != nil {
 		t.Errorf("Third ScheduleRestart() returned error: %v", err3)
 	}
 	if isNew3 {
-		t.Error("Third ScheduleRestart() with lower delay should return isNew=false")
+		t.Error("Third ScheduleRestart() should return isNew=false when already scheduled")
 	}
-	if finalDelay3 != delay2 {
-		t.Errorf("Third ScheduleRestart() returned finalDelay=%v, want %v (existing higher delay)", finalDelay3, delay2)
+	if finalDelay3 != delay1 {
+		t.Errorf("Third ScheduleRestart() returned finalDelay=%v, want %v (existing delay)", finalDelay3, delay1)
 	}
 
 	// Wait for execution
@@ -236,7 +239,6 @@ func TestDelayedRestartManager_ScheduleRestart_MultipleRulesHighestDelayWins(t *
 		t.Error("ScheduleRestart() did not execute within expected time")
 	}
 
-	// Wait a bit and verify execution count is 1 (not multiple executions)
 	time.Sleep(100 * time.Millisecond)
 	if count := executionCount.Load(); count != 1 {
 		t.Errorf("Restart was executed %d times, want exactly 1", count)
@@ -508,8 +510,7 @@ func TestDelayedRestartManager_RestartFuncError(t *testing.T) {
 	// Wait for execution
 	select {
 	case err := <-executed:
-		//nolint:err113 // Direct comparison acceptable for test-defined errors
-		if err != expectedErr {
+		if !errors.Is(err, expectedErr) {
 			t.Errorf("RestartFunc returned unexpected error: %v, want %v", err, expectedErr)
 		}
 	case <-time.After(delay + 200*time.Millisecond):
@@ -539,7 +540,7 @@ func TestDelayedRestartManager_ConcurrentScheduling(t *testing.T) {
 
 	var executionCount atomic.Int32
 	//nolint:unparam // RestartFunc interface requires error return
-	restartFunc := func(_ context.Context) error {
+	restartFunc := func(context.Context) error {
 		executionCount.Add(1)
 
 		return nil
@@ -563,7 +564,7 @@ func TestDelayedRestartManager_ConcurrentScheduling(t *testing.T) {
 
 	wg.Wait()
 
-	// Should have only one scheduled task (the one with highest delay)
+	// Should have only one scheduled task (the first one)
 	if !manager.IsScheduled(target) {
 		t.Error("IsScheduled() returned false after concurrent scheduling")
 	}
@@ -645,6 +646,7 @@ func TestDelayedRestartManager_MultipleTargets(t *testing.T) {
 	}
 }
 
+// TODO: Refactor this test with regards to timing and channel usage
 func TestDelayedRestartManager_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -661,17 +663,29 @@ func TestDelayedRestartManager_ContextCancellation(t *testing.T) {
 		Namespace: "default",
 	}
 
+	fmt.Println("Scheduling restart with cancellable context at", time.Now())
 	contextCanceled := make(chan struct{})
+	var restartFuncCalled = false
+	var taskCtxDone = false
+	var taskCtxDoneTimeout = false
 	restartFunc := func(taskCtx context.Context) error {
+		fmt.Println("restartFunc called at", time.Now())
+		restartFuncCalled = true
 		// Check if context is canceled
 		select {
 		case <-taskCtx.Done():
+			fmt.Println("taskCtx Done at", time.Now())
+			taskCtxDone = true
 			close(contextCanceled)
 
 			return taskCtx.Err()
 		case <-time.After(10 * time.Millisecond):
-			return nil
+			fmt.Println("Timeout waiting for taskCtx to be Done at", time.Now())
+			taskCtxDoneTimeout = true
+
+			return errTaskCtxTimeout
 		}
+
 	}
 
 	delay := 200 * time.Millisecond
@@ -682,8 +696,16 @@ func TestDelayedRestartManager_ContextCancellation(t *testing.T) {
 		t.Errorf("ScheduleRestart() returned error: %v", err)
 	}
 
+	// TODO: Adding this sleep should make the test fail with the channels but does not.
+	// time.Sleep(delay + 100*time.Millisecond)
+
 	// Cancel the restart
 	manager.Cancel(target)
+	if manager.IsScheduled(target) {
+		t.Error("IsScheduled() returned true after cancellation")
+	}
+
+	fmt.Println("Booleans", "restartFuncCalled:", restartFuncCalled, "taskCtxDone:", taskCtxDone, "taskCtxDoneTimeout:", taskCtxDoneTimeout)
 
 	// The task should be canceled before execution
 	time.Sleep(delay + 100*time.Millisecond)

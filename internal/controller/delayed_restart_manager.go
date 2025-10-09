@@ -59,6 +59,7 @@ type DelayedRestartManager interface {
 	IsScheduled(target TargetKey) bool
 
 	// Cancel cancels a scheduled restart for a target
+	// TODO: Could return bool if there was something to cancel
 	Cancel(target TargetKey)
 
 	// Shutdown gracefully shuts down the manager, canceling all pending restarts
@@ -111,28 +112,8 @@ func (m *delayedRestartManager) ScheduleRestart(ctx context.Context, target Targ
 	// Check if there's already a scheduled restart for this target
 	existingTask, exists := m.tasks[target]
 	if exists {
-		// Target already has a pending restart
-		if delay > existingTask.delay {
-			// New delay is higher, reschedule with the higher delay
-			m.logger.Info("Rescheduling restart with higher delay",
-				"target", target.String(),
-				"existingDelay", existingTask.delay,
-				"newDelay", delay,
-				"previousExecuteAt", existingTask.executeAt.Format(time.RFC3339),
-				"newExecuteAt", time.Now().Add(delay).Format(time.RFC3339))
 
-			// Cancel the existing task
-			existingTask.cancelFunc()
-			if existingTask.timer != nil {
-				existingTask.timer.Stop()
-			}
-
-			// Schedule with new higher delay
-			return m.scheduleNewTask(ctx, target, delay, restartFunc)
-		}
-
-		// Existing delay is higher or equal, keep it
-		m.logger.Info("Target already scheduled with equal or higher delay, keeping existing schedule",
+		m.logger.Info("Target already scheduled, keeping existing schedule",
 			"target", target.String(),
 			"existingDelay", existingTask.delay,
 			"requestedDelay", delay,

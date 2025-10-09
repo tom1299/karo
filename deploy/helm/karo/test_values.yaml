@@ -1,0 +1,77 @@
+# Default values for karo
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# Image configuration
+image:
+  repository: karo
+  tag: 1.0.0
+  pullPolicy: Always
+  # Optionally use a specific image digest instead of tag
+  # digest: sha256:94a00394bc5a8ef503fb59db0a7d0ae9e1110866e8aee8ba40cd864cea69ea1a
+
+# Security context configuration following best practices
+securityContext:
+  # Pod security context
+  pod:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
+  # Container security context
+  container:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+# Additional annotations
+annotations:
+  # Additional annotations for deployment
+  deployment: {}
+    # example.com/annotation: "value"
+
+  # Additional annotations for pods
+  pod: {}
+    # example.com/annotation: "value"
+
+# Resources
+resources:
+  limits:
+    cpu: 500m
+    memory: 128Mi
+  requests:
+    cpu: 10m
+    memory: 64Mi
+
+# Replica count
+replicaCount: 1
+
+# Service account
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# RBAC configuration
+rbac:
+  # Specifies whether RBAC resources should be created
+  create: true
+
+# Node selector
+nodeSelector: {}
+
+# Tolerations
+tolerations: []
+
+# Affinity
+affinity: {}

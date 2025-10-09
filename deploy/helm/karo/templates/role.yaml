@@ -2,7 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "karo.fullname" . }}-role
+  name: {{ include "karo.name" . }}-role
   labels:
     {{- include "karo.labels" . | nindent 4 }}
 rules:
@@ -15,20 +15,6 @@ rules:
   - get
   - list
   - watch
-- apiGroups:
-  - ""
-  resources:
-  - configmaps/finalizers
-  verbs:
-  - update
-- apiGroups:
-  - ""
-  resources:
-  - configmaps/status
-  verbs:
-  - get
-  - patch
-  - update
 # Permissions for Secrets
 - apiGroups:
   - ""
@@ -47,8 +33,8 @@ rules:
   - get
   - list
   - watch
+  - patch
   - update
-  - delete
 # Permissions for StatefulSets (as they can also be restart targets)
 - apiGroups:
   - apps
@@ -58,8 +44,8 @@ rules:
   - get
   - list
   - watch
+  - patch
   - update
-  - delete
 # Permissions for RestartRule custom resources
 - apiGroups:
   - karo.jeeatwork.com
@@ -73,12 +59,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - karo.jeeatwork.com
-  resources:
-  - restartrules/finalizers
-  verbs:
-  - update
 - apiGroups:
   - karo.jeeatwork.com
   resources:

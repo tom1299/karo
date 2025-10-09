@@ -504,9 +504,9 @@ func cleanupK8sResources(ctx context.Context, t *testing.T, k8sClient client.Cli
 	time.Sleep(2 * time.Second)
 }
 
-func cleanupNamespace(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset) {
+func cleanupNamespaceByName(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset, namespace string) {
 	if err := clientset.CoreV1().Namespaces().Delete(
-		ctx, testNamespace, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
+		ctx, namespace, metav1.DeleteOptions{}); err != nil && !apierrors.IsNotFound(err) {
 		t.Logf("Failed to delete namespace: %v", err)
 
 		return
@@ -519,12 +519,12 @@ func cleanupNamespace(ctx context.Context, t *testing.T, clientset *kubernetes.C
 
 	for {
 		if time.Since(startTime) > timeout {
-			t.Logf("Timeout waiting for namespace %s to be terminated", testNamespace)
+			t.Logf("Timeout waiting for namespace %s to be terminated", namespace)
 
 			break
 		}
 
-		_, err := clientset.CoreV1().Namespaces().Get(ctx, testNamespace, metav1.GetOptions{})
+		_, err := clientset.CoreV1().Namespaces().Get(ctx, namespace, metav1.GetOptions{})
 		if apierrors.IsNotFound(err) {
 			t.Log("Namespace successfully terminated")
 
@@ -539,6 +539,10 @@ func cleanupNamespace(ctx context.Context, t *testing.T, clientset *kubernetes.C
 
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+func cleanupNamespace(ctx context.Context, t *testing.T, clientset *kubernetes.Clientset) {
+	cleanupNamespaceByName(ctx, t, clientset, testNamespace)
 }
 
 func deleteResource(

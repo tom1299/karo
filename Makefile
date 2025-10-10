@@ -59,7 +59,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: manifests generate fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile=coverage.txt
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test -v $$(go list ./... | grep -v /e2e) -coverprofile=coverage.txt
 
 .PHONY: lint
 lint: golangci-lint ## Run golangci-lint linter
@@ -116,8 +116,8 @@ undeploy: kustomize ## Undeploy controller from the K8s cluster specified in ~/.
 test-all: test-unit ## Run all unit tests with coverage
 
 .PHONY: test-unit
-test-unit: manifests generate fmt vet ## Run unit tests with coverage.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -coverprofile cover-unit.out -covermode=atomic
+test-unit: manifests generate fmt vet envtest ## Run unit tests with coverage and detailed output.
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) --bin-dir $(LOCALBIN) -p path)" go test $$(go list ./... | grep -v /e2e) -v -coverprofile cover-unit.out -covermode=atomic
 
 .PHONY: test-coverage
 test-coverage: test-unit ## Run all unit tests and generate coverage report

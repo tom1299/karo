@@ -538,6 +538,7 @@ func TestBaseReconciler_extractRuleNames(t *testing.T) {
 // TestBaseReconciler_ProcessRestartRules_NoDelay is skipped because it requires a real Kubernetes client
 // to test immediate restart behavior. The delay scheduling logic is thoroughly tested in other tests.
 // This test would verify that rules without delay do NOT schedule delayed restarts, but execute immediately.
+// TODO: What kind of test is that even supposed to be?
 func TestBaseReconciler_ProcessRestartRules_NoDelay(t *testing.T) {
 	t.Skip("Skipping test that requires Kubernetes client for immediate restart execution")
 }
@@ -772,6 +773,7 @@ func TestBaseReconciler_ProcessRestartRules_MultipleTargets(t *testing.T) {
 
 // TestBaseReconciler_ProcessRestartRules_ZeroDelay is skipped because it requires a real Kubernetes client
 // to test immediate restart behavior (delay=0 triggers immediate restart).
+// TODO: What kind of test is that even supposed to be?
 func TestBaseReconciler_ProcessRestartRules_ZeroDelay(t *testing.T) {
 	t.Skip("Skipping test that requires Kubernetes client for immediate restart execution (delay=0)")
 }

@@ -103,8 +103,13 @@ func (r *BaseReconciler) ProcessRestartRules(ctx context.Context, restartRules [
 
 		r.logProcessingTarget(logger, tgtKey, resourceName, resourceType, ruleNames)
 
-		if maxDelay != nil && *maxDelay > 0 {
-			r.processDelayedRestart(ctx, logger, tgtKey, targetSpec, rules, ruleNames, maxDelay, maxDelayRule, resourceName, resourceType)
+		effectiveDelay := r.MinimumDelay
+		if maxDelay != nil && *maxDelay > effectiveDelay {
+			effectiveDelay = *maxDelay
+		}
+
+		if effectiveDelay > 0 {
+			r.processDelayedRestart(ctx, logger, tgtKey, targetSpec, rules, ruleNames, &effectiveDelay, maxDelayRule, resourceName, resourceType)
 		} else if targetSpec.Kind == "Deployment" || targetSpec.Kind == "StatefulSet" {
 			r.processImmediateRestart(ctx, logger, targetSpec, rules, ruleNames, resourceName, resourceType)
 		}
@@ -334,7 +339,8 @@ func (r *BaseReconciler) handleScheduleError(ctx context.Context, logger logr.Lo
 
 // logScheduleResult logs the result of scheduling a delayed restart
 func (r *BaseReconciler) logScheduleResult(logger logr.Logger, isNew bool, targetKey TargetKey, finalDelay, requestedDelay time.Duration, resourceName, resourceType string, ruleNames []string, maxDelayRule *karov1alpha1.RestartRule) {
-	if !isNew {
+	switch {
+	case !isNew:
 		logger.Info("Target already has pending delayed restart, skipping duplicate schedule",
 			"target", targetKey.String(),
 			"existingDelay", finalDelay,
@@ -342,7 +348,7 @@ func (r *BaseReconciler) logScheduleResult(logger logr.Logger, isNew bool, targe
 			"resource", resourceName,
 			"resourceType", resourceType,
 			"restartRules", ruleNames)
-	} else {
+	case maxDelayRule != nil:
 		logger.Info("Scheduled delayed restart",
 			"target", targetKey.String(),
 			"delay", finalDelay,
@@ -350,6 +356,13 @@ func (r *BaseReconciler) logScheduleResult(logger logr.Logger, isNew bool, targe
 			"resourceType", resourceType,
 			"restartRules", ruleNames,
 			"maxDelayFromRule", maxDelayRule.Name)
+	default:
+		logger.Info("Scheduled minimum delay restart",
+			"target", targetKey.String(),
+			"delay", finalDelay,
+			"resource", resourceName,
+			"resourceType", resourceType,
+			"restartRules", ruleNames)
 	}
 }
 

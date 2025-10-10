@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
+	manager "karo.jeeatwork.com/internal/manager"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -589,16 +590,100 @@ func TestDelayedRestartStatefulSet(t *testing.T) {
 	t.Log("SUCCESS: StatefulSet was restarted after 5 second delay")
 }
 
+func TestMinimumDelay(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	clients := setupTestClients(t)
+
+	opts := manager.DefaultSetupOptions()
+	opts.MinimumDelay = 10 // Set minimum delay to 10 seconds for testing
+
+	namespace := generateTestNamespace(namespacePrefix)
+	setupDelayTestEnvironment(ctx, t, clients, namespace, *opts)
+	defer cleanupDelayTest(ctx, t, clients, namespace)
+
+	tests := []struct {
+		name            string
+		restartRuleName string
+		expected        string
+	}{
+		{
+			name:            "10 seconds minimum delay",
+			restartRuleName: "rule-minimum-10",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			deployment := createDelayTestDeployment(namespace, deploymentName)
+			if err := clients.k8sClient.Create(ctx, deployment); err != nil {
+				t.Fatalf("Failed to create Deployment: %v", err)
+			}
+
+			restartRule := createRestartRule()
+			restartRule.Namespace = namespace
+			restartRule.Name = restartRuleName
+			if err := clients.k8sClient.Create(ctx, restartRule); err != nil {
+				t.Fatalf("Failed to create RestartRule: %v", err)
+			}
+
+			configMap := createDelayTestConfigMap(namespace, configMapName)
+			if err := clients.k8sClient.Create(ctx, configMap); err != nil {
+				t.Fatalf("Failed to create ConfigMap: %v", err)
+			}
+
+			if err := waitForDeploymentReady(ctx, clients.clientset, namespace, deployment.Name); err != nil {
+				t.Fatalf("Deployment did not become ready: %v", err)
+			}
+
+			if err := waitForRestartRuleReady(ctx, clients.k8sClient, namespace, restartRule.Name); err != nil {
+				t.Fatalf("RestartRule did not become ready: %v", err)
+			}
+
+			initialAnnotation := getRestartAnnotation(ctx, t, clients.k8sClient, namespace, deployment.Name)
+
+			if err := updateDelayTestConfigMapContent(ctx, clients.k8sClient, namespace, configMap.Name); err != nil {
+				t.Fatalf("Failed to update ConfigMap: %v", err)
+			}
+
+			time.Sleep(5 * time.Second)
+			annotation := getRestartAnnotation(ctx, t, clients.k8sClient, namespace, deployment.Name)
+			if annotation != initialAnnotation {
+				t.Errorf("Restart happened too early! Expected minimum delay of 10 seconds, but restart occurred within 5 seconds")
+			}
+
+			time.Sleep(6 * time.Second)
+			annotation = getRestartAnnotation(ctx, t, clients.k8sClient, namespace, deployment.Name)
+			if annotation == initialAnnotation {
+				t.Errorf("No restart occurred after minimum delay period")
+			}
+
+			logs := clients.controllerManager.GetLogs()
+			logAllLines(t, logs)
+
+		})
+	}
+}
+
 // Helper functions
 
-func setupDelayTestEnvironment(ctx context.Context, t *testing.T, clients *testClients, namespace string) {
+func setupDelayTestEnvironment(ctx context.Context, t *testing.T, clients *testClients, namespace string,
+	options ...manager.SetupOptions) {
 	t.Log("Creating delay test namespace...")
 	if err := createNamespace(ctx, clients.clientset, namespace); err != nil {
 		t.Fatalf("Failed to create namespace: %v", err)
 	}
 
 	t.Log("Starting controller manager...")
-	if err := clients.controllerManager.Start(ctx); err != nil {
+	var opts manager.SetupOptions
+	if len(options) == 0 {
+		opts = *manager.DefaultSetupOptions()
+	} else {
+		opts = options[0]
+	}
+
+	if err := clients.controllerManager.Start(ctx, opts); err != nil {
 		t.Fatalf("Failed to start controller manager: %v", err)
 	}
 }

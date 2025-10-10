@@ -25,7 +25,9 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
 	"karo.jeeatwork.com/internal/store"
@@ -46,7 +48,7 @@ type RestartRuleReconciler struct {
 
 func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := logf.FromContext(ctx)
-	log.V(1).Info("Reconciling RestartRule", "name", req.Name, "namespace", req.Namespace)
+	log.V(1).Info("Reconciling RestartRule")
 
 	var rule karov1alpha1.RestartRule
 	err := r.Get(ctx, req.NamespacedName, &rule)
@@ -54,7 +56,7 @@ func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		if client.IgnoreNotFound(err) == nil {
 			// Object deleted, remove from store
 			r.RestartRuleStore.Remove(ctx, req.Namespace, req.Name)
-			log.V(1).Info("RestartRule deleted from store", "name", req.Name, "namespace", req.Namespace)
+			log.V(1).Info("RestartRule deleted from store")
 
 			return ctrl.Result{}, nil
 		}
@@ -85,7 +87,7 @@ func (r *RestartRuleReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Add to store (separate from validation)
 	r.RestartRuleStore.Add(ctx, &rule)
-	log.V(1).Info("RestartRule added/updated in store", "name", req.Name, "namespace", req.Namespace)
+	log.V(1).Info("RestartRule added/updated in store")
 
 	// Update status to Active
 	if err := r.updateStatus(ctx, &rule, "Active", "RuleActive", "RestartRule is active and monitoring for changes"); err != nil {
@@ -102,6 +104,19 @@ func (r *RestartRuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&karov1alpha1.RestartRule{}).
 		Named("restartrule").
+		WithEventFilter(predicate.Funcs{
+			UpdateFunc: func(e event.UpdateEvent) bool {
+				// Only reconcile if the spec has changed, not just the status
+				oldRule, oldOK := e.ObjectOld.(*karov1alpha1.RestartRule)
+				newRule, newOK := e.ObjectNew.(*karov1alpha1.RestartRule)
+
+				if !oldOK || !newOK {
+					return true
+				}
+
+				return oldRule.Generation != newRule.Generation
+			},
+		}).
 		Complete(r)
 }
 

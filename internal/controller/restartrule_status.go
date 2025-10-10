@@ -30,8 +30,10 @@ import (
 // validTransitions represents the allowed phase transitions for a RestartRule.
 var validTransitions = map[string][]string{
 	"":        {"Pending"},
-	"Pending": {"Active", "Invalid"},
-	"Active":  {"Failed"},
+	"Pending": {"Active", "Invalid", "Pending"},
+	"Active":  {"Active", "Failed"},
+	"Failed":  {"Failed"},
+	"Invalid": {"Invalid"},
 }
 
 var errInvalidPhaseTransition = errors.New("invalid phase transition")

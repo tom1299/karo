@@ -74,6 +74,7 @@ func TestUpdateStatus(t *testing.T) {
 	g.Expect(err.Error()).To(ContainSubstring("invalid phase transition"))
 }
 
+// TODO: Add more tests for updateStatus covering all valid and invalid transitions
 func TestIsValidTransition(t *testing.T) {
 	g := NewWithT(t)
 
@@ -108,6 +109,12 @@ func TestIsValidTransition(t *testing.T) {
 			expected: true,
 		},
 		{
+			name:     "Valid: Active to Active",
+			from:     "Active",
+			to:       "Active",
+			expected: true,
+		},
+		{
 			name:     "Invalid: None to Active",
 			from:     "",
 			to:       "Active",
@@ -120,6 +127,12 @@ func TestIsValidTransition(t *testing.T) {
 			expected: false,
 		},
 		{
+			name:     "Valid: Pending to Pending",
+			from:     "Pending",
+			to:       "Pending",
+			expected: true,
+		},
+		{
 			name:     "Invalid: Active to Pending",
 			from:     "Active",
 			to:       "Pending",
@@ -130,6 +143,12 @@ func TestIsValidTransition(t *testing.T) {
 			from:     "Invalid",
 			to:       "Active",
 			expected: false,
+		},
+		{
+			name:     "Valid: Failed to Failed",
+			from:     "Failed",
+			to:       "Failed",
+			expected: true,
 		},
 	}
 

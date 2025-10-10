@@ -144,7 +144,8 @@ func NewControllerManager(t *testing.T) *ControllerManager {
 }
 
 // Start starts the controller manager in a goroutine
-func (cm *ControllerManager) Start(ctx context.Context) error {
+// TODO: Remove optional parameter and make it mandatory once needed
+func (cm *ControllerManager) Start(ctx context.Context, options ...manager.SetupOptions) error {
 	if cm.started {
 		return ErrControllerAlreadyStarted
 	}
@@ -155,11 +156,19 @@ func (cm *ControllerManager) Start(ctx context.Context) error {
 	log.SetLogger(logger)
 
 	// Setup manager with skip name validation to allow multiple controllers in tests
-	opts := manager.DefaultSetupOptions()
+	var opts manager.SetupOptions
+	if len(options) > 0 {
+		cm.t.Log("Setting up manager with custom options...")
+		opts = options[0]
+	} else {
+		cm.t.Log("Setting up manager with default options...")
+		opts = *manager.DefaultSetupOptions()
+	}
+
 	opts.SkipNameValidation = true
 
 	var err error
-	cm.manager, err = manager.SetupManager(opts)
+	cm.manager, err = manager.SetupManager(&opts)
 	if err != nil {
 		return fmt.Errorf("failed to setup manager: %w", err)
 	}

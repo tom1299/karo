@@ -109,7 +109,7 @@ func testConfigMapRestart(ctx context.Context, t *testing.T, clients *testClient
 	t.Log("=== Testing ConfigMap restart functionality ===")
 
 	t.Log("Creating RestartRule for ConfigMap...")
-	restartRule := createRestartRule()
+	restartRule := createDefaultConfigMapRule()
 	if err := clients.k8sClient.Create(ctx, restartRule); err != nil {
 		t.Fatalf("Failed to create RestartRule: %v", err)
 	}

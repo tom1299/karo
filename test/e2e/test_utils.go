@@ -383,11 +383,17 @@ func createNginxDeployment() *appsv1.Deployment {
 	}
 }
 
-func createRestartRule() *karov1alpha1.RestartRule {
+func createDefaultConfigMapRule() *karov1alpha1.RestartRule {
+	return createConfigMapRule(restartRuleName, configMapName, deploymentName, testNamespace)
+}
+
+func createConfigMapRule(ruleName string, configMapName string, deploymentName string,
+	namespace string) *karov1alpha1.RestartRule {
+
 	return &karov1alpha1.RestartRule{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      restartRuleName,
-			Namespace: testNamespace,
+			Name:      ruleName,
+			Namespace: namespace,
 		},
 		Spec: karov1alpha1.RestartRuleSpec{
 			Changes: []karov1alpha1.ChangeSpec{

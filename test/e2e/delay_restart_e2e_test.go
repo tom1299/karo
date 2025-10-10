@@ -590,6 +590,7 @@ func TestDelayedRestartStatefulSet(t *testing.T) {
 	t.Log("SUCCESS: StatefulSet was restarted after 5 second delay")
 }
 
+// TODO: Use this tests to introduce a general test case refactoring based on a builder pattern
 func TestMinimumDelay(t *testing.T) {
 	t.Parallel()
 
@@ -604,31 +605,33 @@ func TestMinimumDelay(t *testing.T) {
 	defer cleanupDelayTest(ctx, t, clients, namespace)
 
 	tests := []struct {
-		name            string
-		restartRuleName string
-		expected        string
+		name           string
+		ruleName       string
+		expected       string
+		configMapName  string
+		deploymentName string
 	}{
 		{
-			name:            "10 seconds minimum delay",
-			restartRuleName: "rule-minimum-10",
+			name:           "10 seconds minimum delay, no delay specified",
+			ruleName:       "rule-minimum-10",
+			configMapName:  "configmap-minimum-10",
+			deploymentName: "deployment-minimum-10",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			deployment := createDelayTestDeployment(namespace, deploymentName)
+			deployment := createDelayTestDeployment(namespace, tt.deploymentName)
 			if err := clients.k8sClient.Create(ctx, deployment); err != nil {
 				t.Fatalf("Failed to create Deployment: %v", err)
 			}
 
-			restartRule := createRestartRule()
-			restartRule.Namespace = namespace
-			restartRule.Name = restartRuleName
+			restartRule := createConfigMapRule(tt.ruleName, tt.configMapName, tt.deploymentName, namespace)
 			if err := clients.k8sClient.Create(ctx, restartRule); err != nil {
 				t.Fatalf("Failed to create RestartRule: %v", err)
 			}
 
-			configMap := createDelayTestConfigMap(namespace, configMapName)
+			configMap := createDelayTestConfigMap(namespace, tt.configMapName)
 			if err := clients.k8sClient.Create(ctx, configMap); err != nil {
 				t.Fatalf("Failed to create ConfigMap: %v", err)
 			}

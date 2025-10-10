@@ -19,6 +19,7 @@ package main
 import (
 	"flag"
 	"os"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
@@ -41,8 +42,15 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
+	// Validate minimumDelay is within valid range for int32
+	if minimumDelay < 0 || minimumDelay > 3600 {
+		setupLog.Error(nil, "minimum-delay must be between 0 and 3600 seconds", "value", minimumDelay)
+		os.Exit(1)
+	}
+
 	controllerOpts := manager.DefaultSetupOptions()
-	controllerOpts.MinimumDelay = int32(minimumDelay)
+
+	controllerOpts.MinimumDelay = int32(minimumDelay) //nolint:gosec // validated range above
 
 	mgr, err := manager.SetupManager(controllerOpts)
 	if err != nil {

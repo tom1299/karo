@@ -61,6 +61,9 @@ linters:
     generated: lax
     rules:
       - linters:
+          - nolintlint
+        path: cmd/main.go
+      - linters:
           - lll
         path: api/*
 # TODO: Remove thie exclusion.

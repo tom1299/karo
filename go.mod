@@ -6,7 +6,7 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/go-logr/stdr v1.2.2
 	github.com/onsi/gomega v1.38.2
-	github.com/tom1299/k8stest v0.0.0-20251020052944-3ac1b5e94456
+	github.com/tom1299/k8stest v0.0.0-20251023120201-e425bb8efc40
 	k8s.io/api v0.34.1
 	k8s.io/apimachinery v0.34.1
 	k8s.io/client-go v0.34.1

@@ -18,9 +18,6 @@ type KaroResources struct {
 	resources *k8stest.Resources
 
 	restartRules []*karov1alpha1.RestartRule
-	testClients  *k8stest.TestClients
-	ctx          context.Context
-	timeout      time.Duration
 }
 
 type RestartRule struct {
@@ -30,10 +27,14 @@ type RestartRule struct {
 // New creates a new KaroResources object with embedded k8stest.Resources
 func New(t *testing.T, ctx context.Context) *KaroResources {
 	return &KaroResources{
-		resources:   k8stest.New(t, ctx),
-		testClients: k8stest.SetupTestClients(t),
-		ctx:         ctx,
-		timeout:     30 * time.Second,
+		resources: k8stest.New(t, ctx),
+	}
+}
+
+// New creates a new KaroResources object with embedded k8stest.Resources
+func From(resources *k8stest.Resources) *KaroResources {
+	return &KaroResources{
+		resources: resources,
 	}
 }
 
@@ -91,22 +92,21 @@ func (rs *RestartRule) And() *KaroResources {
 }
 
 func (kr *KaroResources) Create() (*KaroResources, error) {
-	// Ensure the scheme has the RestartRule type registered
-	schema := kr.testClients.K8sClient.Scheme()
+	schema := kr.resources.TestClients.K8sClient.Scheme()
 	err := karov1alpha1.AddToScheme(schema)
 	if err != nil {
 		return nil, err
 	}
 
-	// Create base k8stest resources (deployments, configmaps, secrets, etc.)
+	// Create base k8stest resources
 	kr.resources, err = kr.resources.Create()
 	if err != nil {
 		return nil, err
 	}
 
-	// Create RestartRules using the controller-runtime client
+	// Create RestartRules
 	for _, restartRule := range kr.restartRules {
-		if err := kr.testClients.K8sClient.Create(kr.ctx, restartRule); err != nil {
+		if err := kr.resources.TestClients.K8sClient.Create(kr.resources.Ctx, restartRule); err != nil {
 			return nil, fmt.Errorf("failed to create restart rule: %w", err)
 		}
 	}
@@ -116,24 +116,25 @@ func (kr *KaroResources) Create() (*KaroResources, error) {
 
 // Wait waits for all resources to be ready, including RestartRules
 func (kr *KaroResources) Wait() (*KaroResources, error) {
-	// Wait for base k8stest resources (deployments, secrets, configmaps)
-	var err error
-	kr.resources, err = kr.resources.Wait()
+	var err = kr.resources.Wait()
+
 	if err != nil {
 		return nil, err
 	}
 
 	// Wait for RestartRules to be ready (in Active phase with Ready condition)
 	for _, restartRule := range kr.restartRules {
-		err := wait.PollUntilContextTimeout(kr.ctx, 100*time.Millisecond, kr.timeout, true,
+		err := wait.PollUntilContextTimeout(kr.resources.Ctx, 1*time.Second, kr.resources.Timeout, true,
 			func(ctx context.Context) (bool, error) {
+				getCtx, cancel := context.WithTimeout(ctx, kr.resources.Timeout)
+				defer cancel()
+
 				rule := &karov1alpha1.RestartRule{}
-				if err := kr.testClients.K8sClient.Get(ctx,
+				if err := kr.resources.TestClients.K8sClient.Get(getCtx,
 					client.ObjectKey{Namespace: restartRule.Namespace, Name: restartRule.Name}, rule); err != nil {
 					return false, err
 				}
 
-				// Check if the rule is in Active phase
 				return rule.Status.Phase == "Active", nil
 			})
 		if err != nil {
@@ -148,15 +149,14 @@ func (kr *KaroResources) Wait() (*KaroResources, error) {
 func (kr *KaroResources) Delete() (*KaroResources, error) {
 	// Delete RestartRules first
 	for _, restartRule := range kr.restartRules {
-		err := kr.testClients.K8sClient.Delete(kr.ctx, restartRule)
+		err := kr.resources.TestClients.K8sClient.Delete(kr.resources.Ctx, restartRule)
 		if err != nil && !apierrors.IsNotFound(err) {
 			return nil, fmt.Errorf("failed to delete restart rule: %w", err)
 		}
 	}
 
 	// Delete base k8stest resources (deployments, configmaps, secrets)
-	var err error
-	kr.resources, err = kr.resources.Delete()
+	var err = kr.resources.Delete()
 	if err != nil {
 		return nil, err
 	}
@@ -166,8 +166,8 @@ func (kr *KaroResources) Delete() (*KaroResources, error) {
 
 // WithTimeout sets the timeout for Wait operations
 func (kr *KaroResources) WithTimeout(timeout time.Duration) *KaroResources {
-	kr.timeout = timeout
-	kr.resources.WithTimeout(timeout)
+	kr.resources.Timeout = timeout
+
 	return kr
 }
 
@@ -194,66 +194,47 @@ func TestDeploymentRestarts(t *testing.T) {
 
 			ctx := context.Background()
 
-			// Build the k8stest resources using the fluent API
+			// TODO: Make test data creation idempotent by deleting already created resources on an error.
+			// TODO: Change function Timeout call as it does not really fit.
 			k8sResources := k8stest.New(t, ctx).
 				WithDeployment(tt.deploymentName).
 				WithConfigMap(tt.configMapName).
-				And(). // Get back to *Resources
-				WithTimeout(2 * time.Minute)
+				WithTimeout(10 * time.Second)
 
-			// Create KaroResources wrapper
-			testResources := &KaroResources{
-				resources:   k8sResources,
-				testClients: k8stest.SetupTestClients(t),
-				ctx:         ctx,
-				timeout:     2 * time.Minute,
-			}
+			karoResources := From(k8sResources)
 
-			// Add Karo-specific RestartRule using fluent API
-			testResources.WithRestartRule(tt.restartRuleName).
+			karoResources.WithRestartRule(tt.restartRuleName).
 				ForConfigMap(tt.configMapName).
 				WithTarget(tt.deploymentName)
 
-			// Create all resources
-			_, err := testResources.Create()
+			_, err := karoResources.Create()
 			if err != nil {
 				t.Fatalf("failed to create resources: %v", err)
 			}
 
-			// Verify resources were created (skip Wait due to image pull issues in test environment)
-			// Check deployment exists
-			deployment, err := testResources.testClients.ClientSet.AppsV1().Deployments("default").
+			_, err = karoResources.resources.TestClients.ClientSet.AppsV1().Deployments("default").
 				Get(ctx, tt.deploymentName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("failed to get deployment: %v", err)
 			}
-			if deployment.Name != tt.deploymentName {
-				t.Fatalf("deployment name mismatch: expected %s, got %s", tt.deploymentName, deployment.Name)
-			}
 
 			// Check configmap exists
-			configMap, err := testResources.testClients.ClientSet.CoreV1().ConfigMaps("default").
+			_, err = karoResources.resources.TestClients.ClientSet.CoreV1().ConfigMaps("default").
 				Get(ctx, tt.configMapName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("failed to get configmap: %v", err)
 			}
-			if configMap.Name != tt.configMapName {
-				t.Fatalf("configmap name mismatch: expected %s, got %s", tt.configMapName, configMap.Name)
-			}
 
 			// Check RestartRule exists
 			restartRule := &karov1alpha1.RestartRule{}
-			err = testResources.testClients.K8sClient.Get(ctx,
+			err = karoResources.resources.TestClients.K8sClient.Get(ctx,
 				client.ObjectKey{Namespace: "default", Name: tt.restartRuleName}, restartRule)
 			if err != nil {
 				t.Fatalf("failed to get restartrule: %v", err)
 			}
-			if restartRule.Name != tt.restartRuleName {
-				t.Fatalf("restartrule name mismatch: expected %s, got %s", tt.restartRuleName, restartRule.Name)
-			}
 
 			// Clean up resources
-			_, err = testResources.Delete()
+			_, err = karoResources.Delete()
 			if err != nil {
 				t.Fatalf("failed to delete resources: %v", err)
 			}

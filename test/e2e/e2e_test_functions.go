@@ -120,16 +120,20 @@ func (kr *KaroResources) Create() (*KaroResources, error) {
 }
 
 // Wait waits for all resources to be ready, including RestartRules
-func (kr *KaroResources) Wait() (*KaroResources, error) {
-	var err = kr.resources.Wait()
+func (kr *KaroResources) Wait(timeout ...time.Duration) error {
+	applicableTimeout := kr.resources.Timeout
+	if len(timeout) > 0 {
+		applicableTimeout = timeout[0]
+	}
 
+	err := kr.resources.Wait(applicableTimeout)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Wait for RestartRules to be ready (in Active phase with Ready condition)
 	for _, restartRule := range kr.restartRules {
-		err := wait.PollUntilContextTimeout(kr.resources.Ctx, 1*time.Second, kr.resources.Timeout, true,
+		err := wait.PollUntilContextTimeout(kr.resources.Ctx, 1*time.Second, applicableTimeout, true,
 			func(ctx context.Context) (bool, error) {
 				getCtx, cancel := context.WithTimeout(ctx, kr.resources.Timeout)
 				defer cancel()
@@ -143,11 +147,11 @@ func (kr *KaroResources) Wait() (*KaroResources, error) {
 				return rule.Status.Phase == "Active", nil
 			})
 		if err != nil {
-			return nil, fmt.Errorf("failed to wait for restart rule %s: %w", restartRule.Name, err)
+			return fmt.Errorf("failed to wait for restart rule %s: %w", restartRule.Name, err)
 		}
 	}
 
-	return kr, nil
+	return nil
 }
 
 // Delete deletes all resources, including RestartRules

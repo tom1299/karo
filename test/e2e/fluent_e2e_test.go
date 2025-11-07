@@ -18,16 +18,27 @@ func TestDeploymentRestarts(t *testing.T) {
 	}
 
 	tests := []struct {
-		name            string
-		configMapName   string
-		deploymentName  string
-		restartRuleName string
+		name               string
+		configMapName      string
+		deploymentName     string
+		restartRuleName    string
+		expectedLogEntries []ExpectedLogEntry
 	}{
 		{
 			name:            "basic immediate restart",
 			configMapName:   "basic-config",
 			deploymentName:  "basic-deployment",
 			restartRuleName: "basic-restart-rule",
+			expectedLogEntries: []ExpectedLogEntry{
+				{
+					Level:   LogLevelDebug,
+					Message: "RestartRule added/updated in store",
+				},
+				{
+					Level:   LogLevelDebug,
+					Message: "RestartRule deleted from store",
+				},
+			},
 		},
 	}
 
@@ -55,6 +66,10 @@ func TestDeploymentRestarts(t *testing.T) {
 			if _, err := karoResources.Delete(); err != nil {
 				t.Errorf("failed to delete resources: %v", err)
 			}
+
+			karoLogs := GetKaroLogs(clients.controllerManager)
+			karoLogs.ContainLogEntriesInSequence(tt.expectedLogEntries)
+			karoLogs.ContainNoErrorsOrStacktrace()
 		})
 	}
 }

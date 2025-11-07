@@ -151,7 +151,7 @@ func (cm *ControllerManager) Start(ctx context.Context, options ...manager.Setup
 	}
 
 	// Setup logger to capture output
-	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(cm.logCapture))
+	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(cm.logCapture), zap.JSONEncoder())
 	ctrl.SetLogger(logger)
 	log.SetLogger(logger)
 

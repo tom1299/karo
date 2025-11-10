@@ -223,11 +223,10 @@ func waitForDeploymentRestart(
 			return false, err
 		}
 
-		restartAnnotationKey := "karo.jeeatwork.com/restartedAt"
 		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
-			if currentRestartTime, exists := annotations[restartAnnotationKey]; exists {
+			if currentRestartTime, exists := annotations[restartAnnotation]; exists {
 				if previousRestartTime == "" || currentRestartTime != previousRestartTime {
-					t.Logf("Found restart annotation after %s update: %s = %s", resourceType, restartAnnotationKey, currentRestartTime)
+					t.Logf("Found restart annotation after %s update: %s = %s", resourceType, restartAnnotation, currentRestartTime)
 					restartTime = currentRestartTime
 
 					return true, nil
@@ -495,11 +494,10 @@ func checkDeploymentRestarted(
 			return false, err
 		}
 
-		restartAnnotationKey := "karo.jeeatwork.com/restartedAt"
 		if annotations := currentDeployment.Spec.Template.Annotations; annotations != nil {
-			if _, exists := annotations[restartAnnotationKey]; exists {
+			if _, exists := annotations[restartAnnotation]; exists {
 				t.Logf("Found restart annotation after %s update: %s = %s",
-					resourceType, restartAnnotationKey, annotations[restartAnnotationKey])
+					resourceType, restartAnnotation, annotations[restartAnnotation])
 
 				return true, nil
 			}

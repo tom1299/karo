@@ -121,14 +121,6 @@ github.com/tom1299/k8stest v0.0.0-20251023120201-e425bb8efc40 h1:4JLbwHUO87frZfH
 github.com/tom1299/k8stest v0.0.0-20251023120201-e425bb8efc40/go.mod h1:/MePGYm+jzeeGIQNOZLsqsOYvafF7WgoTjWoYfvxKew=
 github.com/tom1299/k8stest v0.0.0-20251028114430-2ad85ab18202 h1:xpXFWb1lDSVPQ5vFUtGBYzE50Q3ttxvdManAGP3nV6U=
 github.com/tom1299/k8stest v0.0.0-20251028114430-2ad85ab18202/go.mod h1:/MePGYm+jzeeGIQNOZLsqsOYvafF7WgoTjWoYfvxKew=
-github.com/tom1299/k8stest v0.0.0-20251103072139-08a517c80063 h1:1hKtaBoDEvEiJqK1Gp7Q5lbCKFMlCZfYoPxk14u1fpk=
-github.com/tom1299/k8stest v0.0.0-20251103072139-08a517c80063/go.mod h1:/MePGYm+jzeeGIQNOZLsqsOYvafF7WgoTjWoYfvxKew=
-github.com/tom1299/k8stest v0.0.0-20251103074335-a913909b6187 h1:aNgOakpjqtE9dpTV6qziDqgRqKMCYFmbOBlAVVPBB0I=
-github.com/tom1299/k8stest v0.0.0-20251103074335-a913909b6187/go.mod h1:/MePGYm+jzeeGIQNOZLsqsOYvafF7WgoTjWoYfvxKew=
-github.com/tom1299/k8stest v0.0.0-20251103100321-e3e33dc3c620 h1:+tEoLqjzsi1ROe0Wb4pl+SHfQSfHBxuTcGdEO1QRTGQ=
-github.com/tom1299/k8stest v0.0.0-20251103100321-e3e33dc3c620/go.mod h1:/MePGYm+jzeeGIQNOZLsqsOYvafF7WgoTjWoYfvxKew=
-github.com/tom1299/k8stest v0.0.0-20251107055601-f1c0238bfc80 h1:41NT880KZd9EHz9lPMBHChp+QXENt7EIJ45mc/ASoFE=
-github.com/tom1299/k8stest v0.0.0-20251107055601-f1c0238bfc80/go.mod h1:/MePGYm+jzeeGIQNOZLsqsOYvafF7WgoTjWoYfvxKew=
 github.com/x448/float16 v0.8.4 h1:qLwI1I70+NjRFUR3zs1JPUCgaCXSh3SW62uAKT1mSBM=
 github.com/x448/float16 v0.8.4/go.mod h1:14CWIYCyZA/cWjXOioeEpHeN/83MdbZDRQHoFcYsOfg=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=

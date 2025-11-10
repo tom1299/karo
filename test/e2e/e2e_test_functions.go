@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/tom1299/k8stest"
+	appsv1 "k8s.io/api/apps/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	karov1alpha1 "karo.jeeatwork.com/api/v1alpha1"
+	"karo.jeeatwork.com/internal/manager"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -22,6 +24,10 @@ type KaroResources struct {
 
 type RestartRule struct {
 	*KaroResources
+}
+
+type RestartRuleStatus struct {
+	*karov1alpha1.RestartRuleStatus
 }
 
 // New creates a new KaroResources object with embedded k8stest.Resources
@@ -171,4 +177,57 @@ func (kr *KaroResources) Delete() (*KaroResources, error) {
 	}
 
 	return kr, nil
+}
+
+func SetupTestContext(ctx context.Context, t *testing.T, clients *testClients, options ...manager.SetupOptions) {
+	t.Log("Starting controller manager...")
+	var opts manager.SetupOptions
+	if len(options) == 0 {
+		opts = *manager.DefaultSetupOptions()
+	} else {
+		opts = options[0]
+	}
+
+	if err := clients.controllerManager.Start(ctx, opts); err != nil {
+		t.Fatalf("Failed to start controller manager: %v", err)
+	}
+}
+
+func (kr *KaroResources) RestartRuleStatus(ruleName string) *RestartRuleStatus {
+	restartRule := &karov1alpha1.RestartRule{}
+	err := kr.resources.TestClients.K8sClient.Get(kr.resources.Ctx,
+		client.ObjectKey{Namespace: "default", Name: ruleName}, restartRule)
+	if err != nil {
+		return &RestartRuleStatus{}
+	}
+
+	return &RestartRuleStatus{&restartRule.Status}
+}
+
+func (rrs *RestartRuleStatus) ShouldContainRestartFor(deploymentName string, successful bool) bool {
+	for _, history := range rrs.RestartHistory {
+		if history.Target.Kind == "Deployment" && history.Target.Name == deploymentName {
+			if successful && history.Status == "Success" {
+				return true
+			}
+			if !successful && history.Status == "Failed" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func (kr *KaroResources) DeploymentHasBeenRolled(deploymentName string, times int) bool {
+	deployment := &appsv1.Deployment{}
+	err := kr.resources.TestClients.K8sClient.Get(kr.resources.Ctx,
+		client.ObjectKey{Namespace: "default", Name: deploymentName}, deployment)
+	if err != nil {
+		return false
+	}
+
+	_, hasAnnotation := deployment.Spec.Template.ObjectMeta.Annotations[restartAnnotation]
+
+	return int(deployment.Status.ObservedGeneration) == times+1 && hasAnnotation
 }

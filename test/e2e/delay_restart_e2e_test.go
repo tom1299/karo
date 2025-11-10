@@ -33,8 +33,7 @@ import (
 )
 
 const (
-	namespacePrefix   = "karo-delay-e2e-test"
-	restartAnnotation = "karo.jeeatwork.com/restartedAt"
+	namespacePrefix = "karo-delay-e2e-test"
 )
 
 // Helper function to create int32 pointer

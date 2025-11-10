@@ -51,6 +51,7 @@ const (
 	testNamespace      = "karo-e2e-test"
 	regexTestNamespace = "karo-regex-e2e-test"
 	timeout            = 5 * time.Minute
+	restartAnnotation  = "karo.jeeatwork.com/restartedAt"
 )
 
 var (

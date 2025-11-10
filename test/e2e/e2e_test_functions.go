@@ -63,7 +63,7 @@ func (kr *KaroResources) WithRestartRule(name string) *RestartRule {
 	return &RestartRule{kr}
 }
 
-func (rs RestartRule) ForConfigMap(configMapName string) *RestartRule {
+func (rs *RestartRule) ForConfigMap(configMapName string) *RestartRule {
 	restartRule := rs.restartRules[len(rs.restartRules)-1]
 	restartRule.Spec.Changes = append(restartRule.Spec.Changes,
 		karov1alpha1.ChangeSpec{
@@ -72,10 +72,10 @@ func (rs RestartRule) ForConfigMap(configMapName string) *RestartRule {
 			IsRegex: false,
 		})
 
-	return &rs
+	return rs
 }
 
-func (rs RestartRule) WithTarget(deploymentName string) *RestartRule {
+func (rs *RestartRule) WithTarget(deploymentName string) *RestartRule {
 	restartRule := rs.restartRules[len(rs.restartRules)-1]
 	restartRule.Spec.Targets = append(restartRule.Spec.Targets,
 		karov1alpha1.TargetSpec{
@@ -84,7 +84,7 @@ func (rs RestartRule) WithTarget(deploymentName string) *RestartRule {
 			Namespace: "default",
 		})
 
-	return &rs
+	return rs
 }
 
 func (rs *RestartRule) And() *KaroResources {

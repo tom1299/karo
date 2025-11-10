@@ -227,7 +227,7 @@ func (kr *KaroResources) DeploymentHasBeenRolled(deploymentName string, times in
 		return false
 	}
 
-	_, hasAnnotation := deployment.Spec.Template.ObjectMeta.Annotations[restartAnnotation]
+	_, hasAnnotation := deployment.Spec.Template.Annotations[restartAnnotation]
 
 	return int(deployment.Status.ObservedGeneration) == times+1 && hasAnnotation
 }

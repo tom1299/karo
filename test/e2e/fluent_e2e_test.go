@@ -11,6 +11,8 @@ import (
 
 // TODO: Reduce complexity
 // TODO: Use testify
+//
+//nolint:cyclop
 func TestDeploymentRestarts(t *testing.T) {
 
 	ctx := context.Background()

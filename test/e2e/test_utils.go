@@ -51,6 +51,7 @@ const (
 	testNamespace      = "karo-e2e-test"
 	regexTestNamespace = "karo-regex-e2e-test"
 	timeout            = 5 * time.Minute
+	restartAnnotation  = "karo.jeeatwork.com/restartedAt"
 )
 
 var (
@@ -151,7 +152,7 @@ func (cm *ControllerManager) Start(ctx context.Context, options ...manager.Setup
 	}
 
 	// Setup logger to capture output
-	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(cm.logCapture))
+	logger := zap.New(zap.UseDevMode(true), zap.WriteTo(cm.logCapture), zap.JSONEncoder())
 	ctrl.SetLogger(logger)
 	log.SetLogger(logger)
 
